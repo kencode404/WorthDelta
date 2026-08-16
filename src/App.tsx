@@ -131,6 +131,8 @@ function TrendChart({ points, label }: { points: Array<{ period: string; value: 
 }
 
 function AnnualChart({ years }: { years: AnnualSummary[] }) {
+  const [activeYear, setActiveYear] = useState<number | null>(null)
+
   if (years.length === 0) return <div className="chart-empty">Your annual progress will appear once records are added.</div>
 
   const width = 1080
@@ -156,6 +158,12 @@ function AnnualChart({ years }: { years: AnnualSummary[] }) {
     { key: 'expenses' as const, label: 'Expenses', color: '#d85f63' },
     { key: 'investments' as const, label: 'Invested', color: '#477fc6' },
   ]
+  const activeSummary = years.find((year) => year.year === activeYear)
+  const activeIndex = activeSummary ? years.indexOf(activeSummary) : -1
+  const activeCenter = activeIndex >= 0 ? padding.left + groupWidth * activeIndex + groupWidth / 2 : 0
+  const tooltipWidth = 236
+  const tooltipX = Math.max(padding.left, Math.min(activeCenter - tooltipWidth / 2, width - padding.right - tooltipWidth))
+  const yearLabel = (year: AnnualSummary) => `${year.year}: Income ${formatCurrency(year.income)}, expenses ${formatCurrency(year.expenses)}, invested ${formatCurrency(year.investments)}, net worth ${formatCurrency(year.netWorth)}`
 
   return (
     <div className="annual-chart-wrap">
@@ -179,7 +187,40 @@ function AnnualChart({ years }: { years: AnnualSummary[] }) {
         })}
         <path d={worthPath} fill="none" stroke="#172e57" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
         {worthPoints.map((point) => <circle key={point.year.year} cx={point.x} cy={point.y} r="7" fill="#fffefa" stroke="#172e57" strokeWidth="4"><title>{point.year.year} net worth: {formatCurrency(point.year.netWorth)}</title></circle>)}
+        {activeSummary && <g className="annual-tooltip" pointerEvents="none">
+          <rect className="annual-tooltip-shadow" x={tooltipX + 5} y="15" width={tooltipWidth} height="126" rx="14" />
+          <rect className="annual-tooltip-card" x={tooltipX} y="10" width={tooltipWidth} height="126" rx="14" />
+          <text className="annual-tooltip-year" x={tooltipX + 16} y="34">{activeSummary.year}</text>
+          <text x={tooltipX + 16} y="57">Income <tspan x={tooltipX + tooltipWidth - 16} textAnchor="end">{formatCurrency(activeSummary.income)}</tspan></text>
+          <text x={tooltipX + 16} y="78">Expenses <tspan x={tooltipX + tooltipWidth - 16} textAnchor="end">{formatCurrency(activeSummary.expenses)}</tspan></text>
+          <text x={tooltipX + 16} y="99">Invested <tspan x={tooltipX + tooltipWidth - 16} textAnchor="end">{formatCurrency(activeSummary.investments)}</tspan></text>
+          <text className="annual-tooltip-worth" x={tooltipX + 16} y="122">Net worth <tspan x={tooltipX + tooltipWidth - 16} textAnchor="end">{formatCurrency(activeSummary.netWorth)}</tspan></text>
+        </g>}
+        {years.map((year, yearIndex) => {
+          const x = padding.left + groupWidth * yearIndex
+          return <g
+            key={`hit-${year.year}`}
+            className="annual-year-hit"
+            role="button"
+            tabIndex={0}
+            aria-label={yearLabel(year)}
+            onMouseEnter={() => setActiveYear(year.year)}
+            onMouseLeave={() => setActiveYear(null)}
+            onFocus={() => setActiveYear(year.year)}
+            onBlur={() => setActiveYear(null)}
+            onPointerDown={(event) => {
+              if (event.pointerType !== 'mouse') setActiveYear((current) => current === year.year ? null : year.year)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                setActiveYear((current) => current === year.year ? null : year.year)
+              }
+            }}
+          ><rect x={x} y={padding.top} width={groupWidth} height={plotHeight + 42} fill="transparent" /></g>
+        })}
       </svg>
+      <p className="chart-interaction-hint">Hover, tap, or focus a year to see its values.</p>
     </div>
   )
 }
@@ -468,12 +509,6 @@ function Dashboard({ session }: { session: Session }) {
         <section className="panel annual-panel">
           <div className="panel-heading annual-heading"><div><p className="eyebrow">Annual dashboard</p><h2>Your financial progress</h2><p>Income, spending, investing, and closing net worth by year.</p></div><span className="annual-range">{annualSummaries[0]?.year ?? '—'}–{annualSummaries.at(-1)?.year ?? '—'}</span></div>
           {loading ? <div className="loading-state"><SpinnerGap className="spin" aria-hidden="true" />Loading annual progress…</div> : <AnnualChart years={annualSummaries} />}
-          {annualSummaries.length > 0 && <div className="annual-table-wrap"><table className="annual-summary-table"><caption className="sr-only">Annual financial totals</caption><thead><tr><th scope="col">Measure</th>{annualSummaries.map((year) => <th scope="col" key={year.year}>{year.year}</th>)}</tr></thead><tbody>
-            <tr><th scope="row">Total income</th>{annualSummaries.map((year) => <td key={year.year}>{formatCurrency(year.income)}</td>)}</tr>
-            <tr><th scope="row">Expenses</th>{annualSummaries.map((year) => <td key={year.year}>{formatCurrency(year.expenses)}</td>)}</tr>
-            <tr><th scope="row">Investments</th>{annualSummaries.map((year) => <td key={year.year}>{formatCurrency(year.investments)}</td>)}</tr>
-            <tr className="net-worth-row"><th scope="row">Net worth</th>{annualSummaries.map((year) => <td key={year.year}>{formatCurrency(year.netWorth)}</td>)}</tr>
-          </tbody></table></div>}
         </section>
 
         <section className="year-progress-section" aria-labelledby="year-progress-title">
