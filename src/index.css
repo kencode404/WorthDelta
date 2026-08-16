@@ -17,13 +17,13 @@
   --surface: #fbfff9;
   --canvas: #ffffff;
   --line: #d9dfeb;
-  --panel-border: #35483f;
+  --panel-border: #7da586;
   --sky: #dce9ff;
   --danger: #9f3f4b;
   --danger-soft: #ffe7e5;
   --success: #166a20;
   --success-soft: #e3f6e5;
-  --shadow: 0 7px 0 rgba(53, 72, 63, .28), 0 18px 36px rgba(23, 46, 87, .09);
+  --shadow: 0 7px 0 rgba(91, 132, 101, .22), 0 18px 36px rgba(23, 46, 87, .07);
 }
 
 * { box-sizing: border-box; }
