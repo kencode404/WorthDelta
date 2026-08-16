@@ -3,7 +3,7 @@
 :root {
   font-family: 'Nunito', system-ui, sans-serif;
   color: #14233f;
-  background: #081710;
+  background: #ffffff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -15,14 +15,14 @@
   --ink: #14233f;
   --muted: #5f6e82;
   --surface: #fbfff9;
-  --canvas: #081710;
+  --canvas: #ffffff;
   --line: #d9dfeb;
   --sky: #dce9ff;
   --danger: #9f3f4b;
   --danger-soft: #ffe7e5;
   --success: #116853;
   --success-soft: #dff8ee;
-  --shadow: 0 8px 0 rgba(0, 0, 0, .22), 0 20px 42px rgba(0, 0, 0, .16);
+  --shadow: 0 8px 0 rgba(23, 46, 87, .08), 0 20px 42px rgba(23, 46, 87, .08);
 }
 
 * { box-sizing: border-box; }

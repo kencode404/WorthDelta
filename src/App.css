@@ -45,7 +45,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .auth-switch { margin: 24px 0 0; color: var(--muted); text-align: center; font-size: 14px; }
 .auth-switch button { padding: 0; border: 0; color: var(--brand); background: transparent; font-weight: 700; }
 
-.dashboard-shell { min-height: 100svh; background: radial-gradient(circle at 84% 4%, rgba(48, 158, 116, .2), transparent 24%), radial-gradient(circle at 46% 44%, rgba(35, 106, 80, .14), transparent 30%), var(--canvas); }
+.dashboard-shell { min-height: 100svh; background: #fff; }
 .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; display: flex; flex-direction: column; width: 280px; padding: 30px 22px 22px; overflow: hidden; color: #fff; background: #06140e; border-right: 2px solid #214b39; }
 .sidebar::before, .sidebar::after { content: ''; position: absolute; z-index: -1; border-radius: 50%; background: rgba(105, 226, 178, .1); }
 .sidebar::before { width: 220px; height: 220px; top: -90px; right: -100px; }
@@ -69,9 +69,9 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .dashboard-main { width: min(1500px, calc(100% - 280px)); min-height: 100svh; margin-left: 280px; padding: clamp(24px, 3vw, 44px); }
 .mobile-tabs { display: none; }
 .dashboard-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
-.dashboard-header h1 { margin: 0; color: #effff7; font: 800 clamp(32px, 3vw, 44px)/1.02 'Baloo 2', sans-serif; letter-spacing: -.035em; }
-.header-subtitle { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 0; color: #a9c6b8; font-size: 13px; line-height: 1.35; }
-.header-subtitle strong { color: #7fe0b8; font-weight: 800; }
+.dashboard-header h1 { margin: 0; color: var(--navy); font: 800 clamp(32px, 3vw, 44px)/1.02 'Baloo 2', sans-serif; letter-spacing: -.035em; }
+.header-subtitle { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.35; }
+.header-subtitle strong { color: var(--brand-dark); font-weight: 800; }
 .header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
 .sync-status { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 13px; border: 2px solid #9fd7c4; border-radius: 999px; color: var(--brand-dark); background: var(--brand-soft); font-size: 11px; font-weight: 800; white-space: nowrap; box-shadow: 0 3px 0 rgba(23, 46, 87, .08); }
 .sync-status svg { width: 16px; height: 16px; }
@@ -116,10 +116,10 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .annual-summary-table tr:last-child th, .annual-summary-table tr:last-child td { border-bottom: 0; }
 .annual-summary-table .net-worth-row th, .annual-summary-table .net-worth-row td { color: var(--brand-dark); background: var(--brand-soft); font-weight: 800; }
 .year-progress-section { margin-top: 34px; }
-.year-progress-section > .section-heading .eyebrow { color: #7fe0b8; }
+.year-progress-section > .section-heading .eyebrow { color: var(--brand-dark); }
 .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
-.section-heading h2 { margin: 0; color: #effff7; font: 800 27px/1.15 'Baloo 2', sans-serif; letter-spacing: -.02em; }
-.section-heading > p { max-width: 460px; margin: 0; color: #a9c6b8; font-size: 12px; text-align: right; }
+.section-heading h2 { margin: 0; color: var(--navy); font: 800 27px/1.15 'Baloo 2', sans-serif; letter-spacing: -.02em; }
+.section-heading > p { max-width: 460px; margin: 0; color: var(--muted); font-size: 12px; text-align: right; }
 .year-progress-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .year-card { padding: 22px; border: 2px solid #cbd4e4; border-radius: 24px; background: var(--surface); box-shadow: var(--shadow); }
 .year-card:nth-child(4n+1) { background: #fffefa; }
