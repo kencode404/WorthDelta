@@ -19,13 +19,13 @@ export async function importHistory(file: File, user: User) {
   }))
 
   const { error: categoryError } = await supabase
-    .from('financial_categories')
+    .from('worthdelta_financial_categories')
     .upsert(categoryRows, { onConflict: 'user_id,category_type,name' })
 
   if (categoryError) throw categoryError
 
   const { data: categories, error: fetchError } = await supabase
-    .from('financial_categories')
+    .from('worthdelta_financial_categories')
     .select('*')
 
   if (fetchError) throw fetchError
@@ -52,7 +52,7 @@ export async function importHistory(file: File, user: User) {
 
   for (let index = 0; index < rows.length; index += CHUNK_SIZE) {
     const { error } = await supabase
-      .from('monthly_records')
+      .from('worthdelta_monthly_records')
       .upsert(rows.slice(index, index + CHUNK_SIZE), {
         onConflict: 'user_id,category_id,period',
       })

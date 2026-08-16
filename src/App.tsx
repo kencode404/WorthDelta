@@ -225,8 +225,8 @@ function Dashboard({ session }: { session: Session }) {
   async function loadData() {
     setLoading(true)
     const [categoryResult, recordResult] = await Promise.all([
-      supabase.from('financial_categories').select('*').order('sort_order'),
-      supabase.from('monthly_records').select('*, financial_categories(name, category_type)').order('period', { ascending: false }),
+      supabase.from('worthdelta_financial_categories').select('*').order('sort_order'),
+      supabase.from('worthdelta_monthly_records').select('*, financial_categories:worthdelta_financial_categories(name, category_type)').order('period', { ascending: false }),
     ])
     setLoading(false)
     const error = categoryResult.error ?? recordResult.error
@@ -267,12 +267,12 @@ function Dashboard({ session }: { session: Session }) {
 
     let category = categories.find((item) => item.category_type === type && item.name.toLocaleLowerCase() === categoryName.trim().toLocaleLowerCase())
     if (!category) {
-      const { data, error } = await supabase.from('financial_categories').insert({ user_id: session.user.id, category_type: type, name: categoryName.trim(), sort_order: categories.length + 1 }).select().single()
+      const { data, error } = await supabase.from('worthdelta_financial_categories').insert({ user_id: session.user.id, category_type: type, name: categoryName.trim(), sort_order: categories.length + 1 }).select().single()
       if (error) { setNotice(error.message); setSaving(false); return }
       category = data as FinancialCategory
     }
 
-    const { error } = await supabase.from('monthly_records').upsert({
+    const { error } = await supabase.from('worthdelta_monthly_records').upsert({
       user_id: session.user.id,
       category_id: category.id,
       period: `${period}-01`,

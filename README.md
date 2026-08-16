@@ -13,6 +13,9 @@ Vite, and Supabase.
 - Add/update workflow for future monthly records
 - One-time import of the normalized 2022–2026 Google Sheets history
 
+All app-owned database objects use the `worthdelta_` prefix so this Supabase
+schema can safely host additional applications.
+
 ## Run locally
 
 ```bash
