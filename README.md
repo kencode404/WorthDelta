@@ -8,6 +8,8 @@ Vite, and Supabase.
 - Shared email and Google authentication through K-Super Hub
 - Private per-user categories, monthly summaries, and detailed ledger entries with row-level security
 - Asset, income, expense, and investment summaries
+- Spreadsheet-inspired annual overview with a combined comparison chart, yearly totals, and progress cards
+- Separate Records view for category analysis, future entries, and the full audit trail
 - Selectable full-history chart for every asset, income, expense, and investment category
 - Add-entry workflow for future traceable records
 - Idempotent import of the normalized 2022–2026 Google Sheets history, including exact source cells and formulas

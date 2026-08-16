@@ -7,7 +7,6 @@ import {
   Database,
   FileArrowUp,
   MagnifyingGlass,
-  Money,
   Plus,
   Receipt,
   SignOut,
@@ -57,6 +56,19 @@ const formatEntryDate = (date: string) =>
 
 const HUB_URL = 'https://kencode404.github.io/K-Super-Hub/'
 type SyncStatus = 'offline' | 'syncing' | 'pending' | 'synced'
+type DashboardView = 'overview' | 'records'
+
+interface AnnualSummary {
+  year: number
+  income: number
+  expenses: number
+  investments: number
+  netWorth: number
+  netWorthChange: number
+  monthsTracked: number
+  savingsRate: number
+  assetTrend: Array<{ period: string; value: number }>
+}
 
 const messageFrom = (error: unknown) => {
   if (error instanceof Error) return error.message
@@ -121,7 +133,78 @@ function TrendChart({ points, label }: { points: Array<{ period: string; value: 
   )
 }
 
+function AnnualChart({ years }: { years: AnnualSummary[] }) {
+  if (years.length === 0) return <div className="chart-empty">Your annual progress will appear once records are added.</div>
+
+  const width = 1080
+  const height = 390
+  const padding = { top: 28, right: 72, bottom: 58, left: 72 }
+  const plotWidth = width - padding.left - padding.right
+  const plotHeight = height - padding.top - padding.bottom
+  const barMax = Math.max(...years.flatMap((year) => [year.income, year.expenses, year.investments]), 1)
+  const worthMax = Math.max(...years.map((year) => year.netWorth), 1)
+  const groupWidth = plotWidth / years.length
+  const barWidth = Math.min(26, groupWidth / 5)
+  const yBar = (value: number) => padding.top + plotHeight - (value / barMax) * plotHeight
+  const yWorth = (value: number) => padding.top + plotHeight - (value / worthMax) * plotHeight
+  const worthPoints = years.map((year, index) => ({
+    x: padding.left + groupWidth * index + groupWidth / 2,
+    y: yWorth(year.netWorth),
+    year,
+  }))
+  const worthPath = worthPoints.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ')
+  const gridLines = [0, .25, .5, .75, 1]
+  const barSeries = [
+    { key: 'income' as const, label: 'Income', color: '#4e9b6c' },
+    { key: 'expenses' as const, label: 'Expenses', color: '#d56c6c' },
+    { key: 'investments' as const, label: 'Invested', color: '#5d8fc2' },
+  ]
+
+  return (
+    <div className="annual-chart-wrap">
+      <div className="chart-legend" aria-hidden="true">
+        {barSeries.map((series) => <span key={series.key}><i style={{ background: series.color }} />{series.label}</span>)}
+        <span><i className="legend-line" />Net worth</span>
+      </div>
+      <svg className="annual-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Annual income, expenses, investments, and net worth from ${years[0].year} to ${years.at(-1)!.year}`}>
+        {gridLines.map((line) => {
+          const y = padding.top + plotHeight - line * plotHeight
+          return <g key={line}><line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#dfe7e2" strokeWidth="1" /><text x={padding.left - 12} y={y + 4} textAnchor="end">{Math.round((barMax * line) / 1000)}k</text><text x={width - padding.right + 12} y={y + 4}>{Math.round((worthMax * line) / 1000)}k</text></g>
+        })}
+        {years.map((year, yearIndex) => {
+          const center = padding.left + groupWidth * yearIndex + groupWidth / 2
+          return <g key={year.year}>{barSeries.map((series, seriesIndex) => {
+            const value = year[series.key]
+            const x = center + (seriesIndex - 1) * (barWidth + 3) - barWidth / 2
+            const y = yBar(value)
+            return <rect key={series.key} x={x} y={y} width={barWidth} height={padding.top + plotHeight - y} rx="3" fill={series.color}><title>{year.year} {series.label}: {formatCurrency(value)}</title></rect>
+          })}<text x={center} y={height - 22} textAnchor="middle" className="annual-year-label">{year.year}</text></g>
+        })}
+        <path d={worthPath} fill="none" stroke="#20352c" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        {worthPoints.map((point) => <circle key={point.year.year} cx={point.x} cy={point.y} r="6" fill="#fff" stroke="#20352c" strokeWidth="4"><title>{point.year.year} net worth: {formatCurrency(point.year.netWorth)}</title></circle>)}
+      </svg>
+    </div>
+  )
+}
+
+function YearSparkline({ points }: { points: AnnualSummary['assetTrend'] }) {
+  if (points.length < 2) return <div className="sparkline-empty" />
+  const width = 280
+  const height = 54
+  const values = points.map((point) => point.value)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const spread = max - min || 1
+  const path = points.map((point, index) => {
+    const x = (index / (points.length - 1)) * width
+    const y = height - 4 - ((point.value - min) / spread) * (height - 8)
+    return `${index ? 'L' : 'M'} ${x} ${y}`
+  }).join(' ')
+  return <svg className="year-sparkline" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Monthly net worth from ${formatMonth(points[0].period)} to ${formatMonth(points.at(-1)!.period)}`}><path d={path} fill="none" stroke="var(--brand)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+}
+
 function Dashboard({ session }: { session: Session }) {
+  const [view, setView] = useState<DashboardView>(() => window.location.hash === '#records' ? 'records' : 'overview')
   const [categories, setCategories] = useState<FinancialCategory[]>([])
   const [records, setRecords] = useState<MonthlyRecord[]>([])
   const [entries, setEntries] = useState<LedgerEntry[]>([])
@@ -142,6 +225,16 @@ function Dashboard({ session }: { session: Session }) {
   const [chartType, setChartType] = useState<CategoryType>('asset')
   const [chartCategory, setChartCategory] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const handleHashChange = () => setView(window.location.hash === '#records' ? 'records' : 'overview')
+    if (window.location.hash !== '#overview' && window.location.hash !== '#records') {
+      window.history.replaceState(null, '', '#overview')
+    }
+    handleHashChange()
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
 
   const showSnapshot = useCallback((snapshot: { categories: FinancialCategory[]; records: MonthlyRecord[]; entries: LedgerEntry[] }) => {
     setCategories(snapshot.categories)
@@ -203,6 +296,50 @@ function Dashboard({ session }: { session: Session }) {
       totals.set(record.period, (totals.get(record.period) ?? 0) + Number(record.amount))
     })
     return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([pointPeriod, value]) => ({ period: pointPeriod, value }))
+  }, [records])
+
+  const annualSummaries = useMemo<AnnualSummary[]>(() => {
+    const yearMap = new Map<number, {
+      income: number
+      expenses: number
+      investments: number
+      assets: Map<string, number>
+    }>()
+
+    records.forEach((record) => {
+      const year = Number(record.period.slice(0, 4))
+      if (!Number.isFinite(year)) return
+      const summary = yearMap.get(year) ?? { income: 0, expenses: 0, investments: 0, assets: new Map<string, number>() }
+      const recordType = record.financial_categories?.category_type
+      const value = Number(record.amount)
+      if (recordType === 'income') summary.income += value
+      if (recordType === 'expense') summary.expenses += value
+      if (recordType === 'investment') summary.investments += value
+      if (recordType === 'asset') summary.assets.set(record.period, (summary.assets.get(record.period) ?? 0) + value)
+      yearMap.set(year, summary)
+    })
+
+    let previousNetWorth: number | undefined
+    return [...yearMap.entries()].sort(([a], [b]) => a - b).map(([year, summary]) => {
+      const yearlyAssetTrend = [...summary.assets.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([period, value]) => ({ period, value }))
+      const netWorth = yearlyAssetTrend.at(-1)?.value ?? 0
+      const openingWorth = previousNetWorth ?? yearlyAssetTrend[0]?.value ?? 0
+      const result: AnnualSummary = {
+        year,
+        income: summary.income,
+        expenses: summary.expenses,
+        investments: summary.investments,
+        netWorth,
+        netWorthChange: netWorth - openingWorth,
+        monthsTracked: yearlyAssetTrend.length,
+        savingsRate: summary.income ? ((summary.income - summary.expenses) / summary.income) * 100 : 0,
+        assetTrend: yearlyAssetTrend,
+      }
+      previousNetWorth = netWorth
+      return result
+    })
   }, [records])
 
   const activePeriod = assetTrend.at(-1)?.period ?? records[0]?.period ?? `${entryDate.slice(0, 7)}-01`
@@ -348,23 +485,47 @@ function Dashboard({ session }: { session: Session }) {
   return (
     <div className="dashboard-shell">
       <aside className="sidebar">
-        <a className="brand brand-light" href={import.meta.env.BASE_URL} aria-label="WorthDelta home"><span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span><span>WorthDelta</span></a>
-        <nav aria-label="Dashboard"><a className="nav-item active" href="#overview"><ChartLineUp aria-hidden="true" />Overview</a><a className="nav-item" href="#records"><Money aria-hidden="true" />Add entry</a><a className="nav-item" href="#ledger"><Receipt aria-hidden="true" />Ledger</a></nav>
+        <a className="brand brand-light" href="#overview" aria-label="WorthDelta overview"><span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span><span>WorthDelta</span></a>
+        <nav aria-label="Dashboard"><a className={`nav-item ${view === 'overview' ? 'active' : ''}`} href="#overview"><ChartLineUp aria-hidden="true" />Overview</a><a className={`nav-item ${view === 'records' ? 'active' : ''}`} href="#records"><Receipt aria-hidden="true" />Records</a></nav>
         <div className="sidebar-user"><span className="avatar">{(session.user.email?.[0] ?? 'W').toUpperCase()}</span><span><strong>{session.user.user_metadata.full_name ?? 'WorthDelta user'}</strong><small>{session.user.email}</small></span><button type="button" onClick={() => void supabase.auth.signOut()} aria-label="Sign out"><SignOut aria-hidden="true" /></button></div>
       </aside>
 
-      <main className="dashboard-main" id="overview">
-        <header className="dashboard-header"><div><p className="eyebrow">Personal finance dashboard</p><h1>Your worth, in motion.</h1><p>Latest asset snapshot: {formatMonth(activePeriod)}</p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span><button className="outline-button" type="button" onClick={() => fileInput.current?.click()} disabled={saving}><FileArrowUp aria-hidden="true" />Import history</button><input ref={fileInput} className="sr-only" type="file" accept="application/json,.json" onChange={handleImport} /></div></header>
+      <main className="dashboard-main">
+        <div className="mobile-tabs" aria-label="Dashboard views"><a className={view === 'overview' ? 'active' : ''} href="#overview">Overview</a><a className={view === 'records' ? 'active' : ''} href="#records">Records</a></div>
+        <header className="dashboard-header"><div><p className="eyebrow">{view === 'overview' ? 'Personal finance dashboard' : 'Traceable finance history'}</p><h1>{view === 'overview' ? 'Every year, in view.' : 'Every amount, traceable.'}</h1><p>{view === 'overview' ? `Latest asset snapshot: ${formatMonth(activePeriod)}` : `${entries.length.toLocaleString()} detailed records across ${categories.length.toLocaleString()} categories`}</p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span>{view === 'records' && <button className="outline-button" type="button" onClick={() => fileInput.current?.click()} disabled={saving}><FileArrowUp aria-hidden="true" />Import history</button>}<input ref={fileInput} className="sr-only" type="file" accept="application/json,.json" onChange={handleImport} /></div></header>
 
         {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>{databaseSetupRequired ? 'Database setup required' : 'Sync paused'}</strong><p>{databaseSetupRequired ? 'Run the included traceable-ledger migration before adding or importing detailed entries.' : `${loadError} Your locally saved changes are safe and will retry automatically.`}</p>{databaseSetupRequired && <code>supabase/migrations/20260816030000_traceable_ledger.sql</code>}</div></section>}
         {notice && <p className="notice" role="status">{notice}</p>}
 
-        <section className="metric-grid" aria-label="Monthly summary">
+        {view === 'overview' ? <>
+        <section className="metric-grid" aria-label="Latest monthly summary">
           <article><span>Asset value</span><strong>{formatCurrency(assets)}</strong><small>Current snapshot</small></article>
           <article><span>Monthly income</span><strong>{formatCurrency(income)}</strong><small>{formatMonth(activePeriod)}</small></article>
           <article><span>Monthly expenses</span><strong>{formatCurrency(expenses)}</strong><small>{income ? `${Math.round((expenses / income) * 100)}% of income` : 'No income recorded'}</small></article>
           <article><span>Invested</span><strong>{formatCurrency(investments)}</strong><small>{formatMonth(activePeriod)}</small></article>
         </section>
+
+        <section className="panel annual-panel">
+          <div className="panel-heading annual-heading"><div><p className="eyebrow">Annual dashboard</p><h2>Your financial progress</h2><p>Income, spending, investing, and closing net worth by year.</p></div><span className="annual-range">{annualSummaries[0]?.year ?? '—'}–{annualSummaries.at(-1)?.year ?? '—'}</span></div>
+          {loading ? <div className="loading-state"><SpinnerGap className="spin" aria-hidden="true" />Loading annual progress…</div> : <AnnualChart years={annualSummaries} />}
+          {annualSummaries.length > 0 && <div className="annual-table-wrap"><table className="annual-summary-table"><caption className="sr-only">Annual financial totals</caption><thead><tr><th scope="col">Measure</th>{annualSummaries.map((year) => <th scope="col" key={year.year}>{year.year}</th>)}</tr></thead><tbody>
+            <tr><th scope="row">Total income</th>{annualSummaries.map((year) => <td key={year.year}>{formatCurrency(year.income)}</td>)}</tr>
+            <tr><th scope="row">Expenses</th>{annualSummaries.map((year) => <td key={year.year}>{formatCurrency(year.expenses)}</td>)}</tr>
+            <tr><th scope="row">Investments</th>{annualSummaries.map((year) => <td key={year.year}>{formatCurrency(year.investments)}</td>)}</tr>
+            <tr className="net-worth-row"><th scope="row">Net worth</th>{annualSummaries.map((year) => <td key={year.year}>{formatCurrency(year.netWorth)}</td>)}</tr>
+          </tbody></table></div>}
+        </section>
+
+        <section className="year-progress-section" aria-labelledby="year-progress-title">
+          <div className="section-heading"><div><p className="eyebrow">Year by year</p><h2 id="year-progress-title">Progress cards</h2></div><p>Closing net worth uses the latest asset month recorded in each year.</p></div>
+          <div className="year-progress-grid">{annualSummaries.map((year) => <article className="year-card" key={year.year}>
+            <div className="year-card-heading"><div><span>{year.year}</span><strong>{formatCurrency(year.netWorth)}</strong><small>Closing net worth</small></div><span className={`year-change ${year.netWorthChange < 0 ? 'negative' : ''}`}>{year.netWorthChange >= 0 ? '+' : ''}{formatCurrency(year.netWorthChange)}</span></div>
+            <YearSparkline points={year.assetTrend} />
+            <dl><div><dt>Income</dt><dd>{formatCurrency(year.income)}</dd></div><div><dt>Expenses</dt><dd>{formatCurrency(year.expenses)}</dd></div><div><dt>Invested</dt><dd>{formatCurrency(year.investments)}</dd></div><div><dt>Savings rate</dt><dd>{Math.round(year.savingsRate)}%</dd></div></dl>
+            <div className="year-months"><span><strong>{year.monthsTracked}</strong> of 12 asset months</span><span>{Math.min(100, Math.round((year.monthsTracked / 12) * 100))}%</span></div><div className="year-progress-track"><span style={{ width: `${Math.min(100, (year.monthsTracked / 12) * 100)}%` }} /></div>
+          </article>)}</div>
+        </section>
+        </> : <>
 
         <section className="dashboard-grid">
           <article className="panel trend-panel">
@@ -398,6 +559,7 @@ function Dashboard({ session }: { session: Session }) {
             {visibleEntries < filteredEntries.length && <button className="load-more" type="button" onClick={() => setVisibleEntries((count) => count + 50)}>Show 50 more</button>}
           </>}
         </section>
+        </>}
       </main>
     </div>
   )
