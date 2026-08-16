@@ -46,12 +46,13 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .auth-switch button { padding: 0; border: 0; color: var(--brand); background: transparent; font-weight: 700; }
 
 .dashboard-shell { min-height: 100svh; background: #fff; }
-.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; display: flex; flex-direction: column; width: 280px; padding: 30px 22px 22px; overflow: hidden; color: #071f0d; background: #228b22; border-right: 2px solid #146b17; }
+.sidebar { --sidebar-text-outline: -.65px -.65px 0 rgba(255,255,255,.78), .65px -.65px 0 rgba(255,255,255,.78), -.65px .65px 0 rgba(255,255,255,.78), .65px .65px 0 rgba(255,255,255,.78); position: fixed; inset: 0 auto 0 0; z-index: 20; display: flex; flex-direction: column; width: 280px; padding: 30px 22px 22px; overflow: hidden; color: #071f0d; background: #228b22; border-right: 2px solid #146b17; }
 .sidebar::before, .sidebar::after { content: ''; position: absolute; z-index: -1; border-radius: 50%; background: rgba(255, 255, 255, .1); }
 .sidebar::before { width: 220px; height: 220px; top: -90px; right: -100px; }
 .sidebar::after { width: 150px; height: 150px; bottom: 80px; left: -95px; }
 .sidebar > .brand { gap: 14px; font-size: 24px; }
 .sidebar .brand-light { color: #071f0d; }
+.sidebar .brand-light, .nav-item:not(.active), .sidebar-user strong { text-shadow: var(--sidebar-text-outline); }
 .sidebar > .brand .brand-mark { width: 54px; height: 54px; border: 2px solid #fff; border-radius: 18px; box-shadow: 0 5px 0 rgba(7, 31, 13, .3); }
 .sidebar nav { display: grid; gap: 6px; margin-top: 52px; }
 .nav-item { display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 0 14px; border: 2px solid transparent; border-radius: 16px; color: #071f0d; text-decoration: none; font-size: 15px; font-weight: 800; transition: color 160ms ease, background-color 160ms ease, transform 120ms ease, box-shadow 120ms ease; }
@@ -63,7 +64,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .avatar { display: grid; place-items: center; width: 40px; height: 40px; border: 2px solid #fff; border-radius: 14px; color: #071f0d; background: #d9f2d9; font-weight: 800; box-shadow: 0 3px 0 rgba(7, 31, 13, .25); }
 .sidebar-user strong, .sidebar-user small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-user strong { color: #071f0d; font-size: 12px; }
-.sidebar-user small { margin-top: 3px; color: #0b4013; font-size: 10px; }
+.sidebar-user small { margin-top: 3px; color: #0b4013; font-size: 10px; text-shadow: 0 1px 0 rgba(255,255,255,.55); }
 .sidebar-user button { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 13px; color: #071f0d; background: transparent; }
 .sidebar-user button:hover { color: #071f0d; background: rgba(255,255,255,.3); }
 
@@ -223,6 +224,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .dashboard-main { width: 100%; margin: 0; padding: 28px 18px 48px; }
   .mobile-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 22px; padding: 5px; border: 2px solid #146b17; border-radius: 16px; background: #228b22; box-shadow: 0 4px 0 #126b19; }
   .mobile-tabs a { display: grid; place-items: center; min-height: 44px; border-radius: 11px; color: #071f0d; text-decoration: none; font-size: 13px; font-weight: 800; }
+  .mobile-tabs a:not(.active) { text-shadow: -.65px -.65px 0 rgba(255,255,255,.78), .65px -.65px 0 rgba(255,255,255,.78), -.65px .65px 0 rgba(255,255,255,.78), .65px .65px 0 rgba(255,255,255,.78); }
   .mobile-tabs a.active { color: #0d4f13; background: #fff; box-shadow: inset 0 0 0 2px #145f17; }
   .ledger-heading { align-items: stretch; flex-direction: column; }
   .ledger-filters { align-items: stretch; }
