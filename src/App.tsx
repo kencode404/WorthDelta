@@ -298,7 +298,7 @@ function Dashboard({ session }: { session: Session }) {
       ? `Syncing${pendingCount > 0 ? ` ${pendingCount}` : ''}…`
       : syncStatus === 'pending'
         ? `${pendingCount} waiting to sync`
-        : 'All changes synced'
+        : 'Synced'
   const databaseSetupRequired = /schema cache|PGRST205|could not find the table/i.test(loadError)
 
   return (
