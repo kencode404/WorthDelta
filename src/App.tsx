@@ -50,7 +50,7 @@ function HubRedirect() {
 
   return (
     <main className="boot-screen">
-      <span className="brand-mark" aria-hidden="true">Δ</span>
+      <span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
       <SpinnerGap className="spin" aria-label="Opening K-Super Hub" />
     </main>
   )
@@ -191,7 +191,7 @@ function Dashboard({ session }: { session: Session }) {
   return (
     <div className="dashboard-shell">
       <aside className="sidebar">
-        <a className="brand brand-light" href={import.meta.env.BASE_URL} aria-label="WorthDelta home"><span className="brand-mark" aria-hidden="true">Δ</span><span>WorthDelta</span></a>
+        <a className="brand brand-light" href={import.meta.env.BASE_URL} aria-label="WorthDelta home"><span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span><span>WorthDelta</span></a>
         <nav aria-label="Dashboard"><a className="nav-item active" href="#overview"><ChartLineUp aria-hidden="true" />Overview</a><a className="nav-item" href="#records"><Money aria-hidden="true" />Records</a></nav>
         <div className="sidebar-user"><span className="avatar">{(session.user.email?.[0] ?? 'W').toUpperCase()}</span><span><strong>{session.user.user_metadata.full_name ?? 'WorthDelta user'}</strong><small>{session.user.email}</small></span><button type="button" onClick={() => void supabase.auth.signOut()} aria-label="Sign out"><SignOut aria-hidden="true" /></button></div>
       </aside>
