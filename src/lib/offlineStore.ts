@@ -1,16 +1,24 @@
 import { supabase } from './supabase'
-import type { CategoryType, FinancialCategory, HistoryFile, MonthlyRecord } from '../types'
+import type {
+  CategoryType,
+  FinancialCategory,
+  HistoryFile,
+  LedgerEntry,
+  MonthlyRecord,
+} from '../types'
 
 const DATABASE_NAME = 'worthdelta-offline'
-const DATABASE_VERSION = 1
+const DATABASE_VERSION = 2
 const SNAPSHOT_STORE = 'snapshots'
 const MUTATION_STORE = 'mutations'
+const ENTRY_MUTATION_STORE = 'entry-mutations'
 const SYNC_CHUNK_SIZE = 250
 
 export interface OfflineSnapshot {
   user_id: string
   categories: FinancialCategory[]
   records: MonthlyRecord[]
+  entries: LedgerEntry[]
   updated_at: number
 }
 
@@ -29,6 +37,26 @@ interface PendingRecordMutation {
   updated_at: number
 }
 
+interface PendingEntryMutation {
+  queue_id: string
+  id: string
+  user_id: string
+  category_type: CategoryType
+  category_name: string
+  category_sort_order: number
+  local_category_id: string
+  entry_date: string
+  period: string
+  amount: number
+  description: string
+  source_type: 'manual' | 'google_sheets'
+  source_sheet: string | null
+  source_cell: string | null
+  source_formula: string | null
+  external_key: string | null
+  updated_at: number
+}
+
 interface QueueRecordInput {
   userId: string
   categoryType: CategoryType
@@ -40,14 +68,22 @@ interface QueueRecordInput {
   source?: string
 }
 
+interface QueueEntryInput extends QueueRecordInput {
+  entryDate: string
+  description: string
+  sourceType?: 'manual' | 'google_sheets'
+  sourceSheet?: string | null
+  sourceCell?: string | null
+  sourceFormula?: string | null
+  externalKey?: string | null
+}
+
 let databasePromise: Promise<IDBDatabase> | undefined
 
 function openDatabase() {
   if (databasePromise) return databasePromise
-
   databasePromise = new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION)
-
     request.onupgradeneeded = () => {
       const database = request.result
       if (!database.objectStoreNames.contains(SNAPSHOT_STORE)) {
@@ -57,12 +93,15 @@ function openDatabase() {
         const store = database.createObjectStore(MUTATION_STORE, { keyPath: 'id' })
         store.createIndex('user_id', 'user_id')
       }
+      if (!database.objectStoreNames.contains(ENTRY_MUTATION_STORE)) {
+        const store = database.createObjectStore(ENTRY_MUTATION_STORE, { keyPath: 'queue_id' })
+        store.createIndex('user_id', 'user_id')
+      }
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
     request.onblocked = () => reject(new Error('WorthDelta offline storage is blocked by another tab.'))
   })
-
   return databasePromise
 }
 
@@ -82,7 +121,12 @@ function transactionComplete(transaction: IDBTransaction) {
 }
 
 function emptySnapshot(userId: string): OfflineSnapshot {
-  return { user_id: userId, categories: [], records: [], updated_at: Date.now() }
+  return { user_id: userId, categories: [], records: [], entries: [], updated_at: Date.now() }
+}
+
+function normalizeSnapshot(snapshot: OfflineSnapshot): OfflineSnapshot {
+  snapshot.entries ??= []
+  return snapshot
 }
 
 function normalizedName(name: string) {
@@ -100,16 +144,23 @@ function mutationKey(userId: string, type: CategoryType, name: string, period: s
 function sortSnapshot(snapshot: OfflineSnapshot) {
   snapshot.categories.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
   snapshot.records.sort((a, b) => b.period.localeCompare(a.period))
+  snapshot.entries.sort((a, b) =>
+    b.entry_date.localeCompare(a.entry_date) ||
+    (b.created_at ?? '').localeCompare(a.created_at ?? '') ||
+    b.id.localeCompare(a.id),
+  )
   snapshot.updated_at = Date.now()
   return snapshot
 }
 
-function applyMutation(snapshot: OfflineSnapshot, mutation: PendingRecordMutation) {
+function ensureCategory(
+  snapshot: OfflineSnapshot,
+  mutation: Pick<PendingRecordMutation, 'category_type' | 'category_name' | 'category_sort_order' | 'local_category_id' | 'user_id'>,
+) {
   const wantedCategoryKey = categoryKey(mutation.category_type, mutation.category_name)
   let category = snapshot.categories.find(
     (item) => categoryKey(item.category_type, item.name) === wantedCategoryKey,
   )
-
   if (!category) {
     category = {
       id: mutation.local_category_id,
@@ -120,7 +171,11 @@ function applyMutation(snapshot: OfflineSnapshot, mutation: PendingRecordMutatio
     }
     snapshot.categories.push(category)
   }
+  return category
+}
 
+function applyRecordMutation(snapshot: OfflineSnapshot, mutation: PendingRecordMutation) {
+  const category = ensureCategory(snapshot, mutation)
   const existingRecordIndex = snapshot.records.findIndex(
     (record) =>
       record.period === mutation.period &&
@@ -136,19 +191,42 @@ function applyMutation(snapshot: OfflineSnapshot, mutation: PendingRecordMutatio
     amount: mutation.amount,
     note: mutation.note,
     source: mutation.source,
-    financial_categories: {
-      name: category.name,
-      category_type: category.category_type,
-    },
+    financial_categories: { name: category.name, category_type: category.category_type },
   }
-
   if (existingRecordIndex >= 0) snapshot.records[existingRecordIndex] = nextRecord
   else snapshot.records.push(nextRecord)
-
   return sortSnapshot(snapshot)
 }
 
-function createMutation(snapshot: OfflineSnapshot, input: QueueRecordInput): PendingRecordMutation {
+function applyEntryMutation(snapshot: OfflineSnapshot, mutation: PendingEntryMutation) {
+  const category = ensureCategory(snapshot, mutation)
+  const existingIndex = snapshot.entries.findIndex((entry) =>
+    mutation.external_key ? entry.external_key === mutation.external_key : entry.id === mutation.id,
+  )
+  const existing = existingIndex >= 0 ? snapshot.entries[existingIndex] : undefined
+  const nextEntry: LedgerEntry = {
+    id: existing?.id ?? mutation.id,
+    user_id: mutation.user_id,
+    category_id: category.id,
+    entry_date: mutation.entry_date,
+    period: mutation.period,
+    amount: mutation.amount,
+    description: mutation.description,
+    source_type: mutation.source_type,
+    source_sheet: mutation.source_sheet,
+    source_cell: mutation.source_cell,
+    source_formula: mutation.source_formula,
+    external_key: mutation.external_key,
+    created_at: existing?.created_at ?? new Date(mutation.updated_at).toISOString(),
+    updated_at: new Date(mutation.updated_at).toISOString(),
+    financial_categories: { name: category.name, category_type: category.category_type },
+  }
+  if (existingIndex >= 0) snapshot.entries[existingIndex] = nextEntry
+  else snapshot.entries.push(nextEntry)
+  return sortSnapshot(snapshot)
+}
+
+function createRecordMutation(snapshot: OfflineSnapshot, input: QueueRecordInput): PendingRecordMutation {
   const name = input.categoryName.trim()
   const category = snapshot.categories.find(
     (item) => categoryKey(item.category_type, item.name) === categoryKey(input.categoryType, name),
@@ -159,7 +237,6 @@ function createMutation(snapshot: OfflineSnapshot, input: QueueRecordInput): Pen
       record.financial_categories?.category_type === input.categoryType &&
       normalizedName(record.financial_categories.name) === normalizedName(name),
   )
-
   return {
     id: mutationKey(input.userId, input.categoryType, name, input.period),
     user_id: input.userId,
@@ -176,6 +253,34 @@ function createMutation(snapshot: OfflineSnapshot, input: QueueRecordInput): Pen
   }
 }
 
+function createEntryMutation(snapshot: OfflineSnapshot, input: QueueEntryInput): PendingEntryMutation {
+  const name = input.categoryName.trim()
+  const category = snapshot.categories.find(
+    (item) => categoryKey(item.category_type, item.name) === categoryKey(input.categoryType, name),
+  )
+  const id = crypto.randomUUID()
+  const externalKey = input.externalKey ?? null
+  return {
+    queue_id: externalKey ? `${input.userId}|${externalKey}` : id,
+    id,
+    user_id: input.userId,
+    category_type: input.categoryType,
+    category_name: name,
+    category_sort_order: category?.sort_order ?? input.categorySortOrder,
+    local_category_id: category?.id ?? crypto.randomUUID(),
+    entry_date: input.entryDate,
+    period: input.period,
+    amount: input.amount,
+    description: input.description.trim(),
+    source_type: input.sourceType ?? 'manual',
+    source_sheet: input.sourceSheet ?? null,
+    source_cell: input.sourceCell ?? null,
+    source_formula: input.sourceFormula ?? null,
+    external_key: externalKey,
+    updated_at: Date.now(),
+  }
+}
+
 async function saveSnapshot(snapshot: OfflineSnapshot) {
   const database = await openDatabase()
   const transaction = database.transaction(SNAPSHOT_STORE, 'readwrite')
@@ -185,17 +290,23 @@ async function saveSnapshot(snapshot: OfflineSnapshot) {
 
 async function saveSnapshotAndMutations(
   snapshot: OfflineSnapshot,
-  mutations: PendingRecordMutation[],
+  recordMutations: PendingRecordMutation[],
+  entryMutations: PendingEntryMutation[],
 ) {
   const database = await openDatabase()
-  const transaction = database.transaction([SNAPSHOT_STORE, MUTATION_STORE], 'readwrite')
+  const transaction = database.transaction(
+    [SNAPSHOT_STORE, MUTATION_STORE, ENTRY_MUTATION_STORE],
+    'readwrite',
+  )
   transaction.objectStore(SNAPSHOT_STORE).put(snapshot)
-  const mutationStore = transaction.objectStore(MUTATION_STORE)
-  mutations.forEach((mutation) => mutationStore.put(mutation))
+  const recordStore = transaction.objectStore(MUTATION_STORE)
+  recordMutations.forEach((mutation) => recordStore.put(mutation))
+  const entryStore = transaction.objectStore(ENTRY_MUTATION_STORE)
+  entryMutations.forEach((mutation) => entryStore.put(mutation))
   await transactionComplete(transaction)
 }
 
-async function pendingMutations(userId: string) {
+async function pendingRecordMutations(userId: string) {
   const database = await openDatabase()
   const transaction = database.transaction(MUTATION_STORE, 'readonly')
   const mutations = await requestResult(
@@ -205,20 +316,39 @@ async function pendingMutations(userId: string) {
   return mutations.sort((a, b) => a.updated_at - b.updated_at)
 }
 
-async function clearSyncedMutations(mutations: PendingRecordMutation[]) {
-  if (mutations.length === 0) return
+async function pendingEntryMutations(userId: string) {
   const database = await openDatabase()
-  const transaction = database.transaction(MUTATION_STORE, 'readwrite')
-  const store = transaction.objectStore(MUTATION_STORE)
+  const transaction = database.transaction(ENTRY_MUTATION_STORE, 'readonly')
+  const mutations = await requestResult(
+    transaction.objectStore(ENTRY_MUTATION_STORE).index('user_id').getAll(userId),
+  ) as PendingEntryMutation[]
+  await transactionComplete(transaction)
+  return mutations.sort((a, b) => a.updated_at - b.updated_at)
+}
 
-  mutations.forEach((mutation) => {
-    const request = store.get(mutation.id)
+async function clearSyncedMutations(
+  recordMutations: PendingRecordMutation[],
+  entryMutations: PendingEntryMutation[],
+) {
+  if (recordMutations.length === 0 && entryMutations.length === 0) return
+  const database = await openDatabase()
+  const transaction = database.transaction([MUTATION_STORE, ENTRY_MUTATION_STORE], 'readwrite')
+  const recordStore = transaction.objectStore(MUTATION_STORE)
+  const entryStore = transaction.objectStore(ENTRY_MUTATION_STORE)
+  recordMutations.forEach((mutation) => {
+    const request = recordStore.get(mutation.id)
     request.onsuccess = () => {
       const current = request.result as PendingRecordMutation | undefined
-      if (current?.updated_at === mutation.updated_at) store.delete(mutation.id)
+      if (current?.updated_at === mutation.updated_at) recordStore.delete(mutation.id)
     }
   })
-
+  entryMutations.forEach((mutation) => {
+    const request = entryStore.get(mutation.queue_id)
+    request.onsuccess = () => {
+      const current = request.result as PendingEntryMutation | undefined
+      if (current?.updated_at === mutation.updated_at) entryStore.delete(mutation.queue_id)
+    }
+  })
   await transactionComplete(transaction)
 }
 
@@ -229,18 +359,33 @@ export async function getOfflineSnapshot(userId: string) {
     transaction.objectStore(SNAPSHOT_STORE).get(userId),
   ) as OfflineSnapshot | undefined
   await transactionComplete(transaction)
-  return snapshot
+  return snapshot ? normalizeSnapshot(snapshot) : undefined
 }
 
 export async function getPendingChangeCount(userId: string) {
-  return (await pendingMutations(userId)).length
+  const [records, entries] = await Promise.all([
+    pendingRecordMutations(userId),
+    pendingEntryMutations(userId),
+  ])
+  return records.length + entries.length
 }
 
-export async function queueRecordChange(input: QueueRecordInput) {
+export async function queueLedgerEntry(input: QueueEntryInput) {
   const snapshot = (await getOfflineSnapshot(input.userId)) ?? emptySnapshot(input.userId)
-  const mutation = createMutation(snapshot, input)
-  applyMutation(snapshot, mutation)
-  await saveSnapshotAndMutations(snapshot, [mutation])
+  const existingMonthly = snapshot.records.find((record) =>
+    record.period === input.period &&
+    record.financial_categories?.category_type === input.categoryType &&
+    normalizedName(record.financial_categories.name) === normalizedName(input.categoryName),
+  )
+  const entryMutation = createEntryMutation(snapshot, input)
+  const recordMutation = createRecordMutation(snapshot, {
+    ...input,
+    amount: Number(existingMonthly?.amount ?? 0) + input.amount,
+    source: 'ledger',
+  })
+  applyEntryMutation(snapshot, entryMutation)
+  applyRecordMutation(snapshot, recordMutation)
+  await saveSnapshotAndMutations(snapshot, [recordMutation], [entryMutation])
   return { snapshot, pendingCount: await getPendingChangeCount(input.userId) }
 }
 
@@ -249,12 +394,12 @@ export async function queueHistoryImport(payload: HistoryFile, userId: string) {
   const categoryDetails = new Map(
     payload.categories.map((category) => [categoryKey(category.type, category.name), category]),
   )
-  const queued = new Map<string, PendingRecordMutation>()
-
+  const queuedRecords = new Map<string, PendingRecordMutation>()
+  const queuedEntries = new Map<string, PendingEntryMutation>()
   payload.records.forEach((record) => {
     const details = categoryDetails.get(categoryKey(record.type, record.category))
     if (!details) throw new Error(`Category not found: ${record.category}`)
-    const mutation = createMutation(snapshot, {
+    const mutation = createRecordMutation(snapshot, {
       userId,
       categoryType: record.type,
       categoryName: record.category,
@@ -263,29 +408,52 @@ export async function queueHistoryImport(payload: HistoryFile, userId: string) {
       amount: record.amount,
       source: `Google Sheets · ${record.source_sheet}:${record.source_row}`,
     })
-    applyMutation(snapshot, mutation)
-    queued.set(mutation.id, mutation)
+    applyRecordMutation(snapshot, mutation)
+    queuedRecords.set(mutation.id, mutation)
   })
-
-  await saveSnapshotAndMutations(snapshot, [...queued.values()])
+  payload.entries?.forEach((entry) => {
+    const details = categoryDetails.get(categoryKey(entry.type, entry.category))
+    if (!details) throw new Error(`Category not found: ${entry.category}`)
+    const mutation = createEntryMutation(snapshot, {
+      userId,
+      categoryType: entry.type,
+      categoryName: entry.category,
+      categorySortOrder: details.sort_order,
+      period: entry.period,
+      entryDate: entry.entry_date,
+      amount: entry.amount,
+      description: entry.description,
+      sourceType: 'google_sheets',
+      sourceSheet: entry.source_sheet,
+      sourceCell: entry.source_cell,
+      sourceFormula: entry.source_formula,
+      externalKey: entry.external_key,
+    })
+    applyEntryMutation(snapshot, mutation)
+    queuedEntries.set(mutation.queue_id, mutation)
+  })
+  await saveSnapshotAndMutations(snapshot, [...queuedRecords.values()], [...queuedEntries.values()])
   return {
     snapshot,
     categories: payload.categories.length,
     records: payload.records.length,
+    entries: payload.entries?.length ?? 0,
     pendingCount: await getPendingChangeCount(userId),
   }
 }
 
 export async function syncPendingChanges(userId: string) {
-  const mutations = await pendingMutations(userId)
-  if (mutations.length === 0) return 0
+  const [recordMutations, entryMutations] = await Promise.all([
+    pendingRecordMutations(userId),
+    pendingEntryMutations(userId),
+  ])
+  if (recordMutations.length === 0 && entryMutations.length === 0) return 0
   if (!navigator.onLine) throw new Error('WorthDelta is offline.')
-
-  const uniqueCategories = new Map<string, PendingRecordMutation>()
-  mutations.forEach((mutation) => {
+  const allMutations = [...recordMutations, ...entryMutations]
+  const uniqueCategories = new Map<string, (typeof allMutations)[number]>()
+  allMutations.forEach((mutation) => {
     uniqueCategories.set(categoryKey(mutation.category_type, mutation.category_name), mutation)
   })
-
   const { data: categoryData, error: categoryError } = await supabase
     .from('worthdelta_financial_categories')
     .upsert(
@@ -298,64 +466,98 @@ export async function syncPendingChanges(userId: string) {
       { onConflict: 'user_id,category_type,name' },
     )
     .select('*')
-
   if (categoryError) throw categoryError
-
   const remoteCategoryIds = new Map(
     (categoryData as FinancialCategory[]).map((category) => [
       categoryKey(category.category_type, category.name),
       category.id,
     ]),
   )
-  const rows = mutations.map((mutation) => {
-    const categoryId = remoteCategoryIds.get(
-      categoryKey(mutation.category_type, mutation.category_name),
-    )
-    if (!categoryId) throw new Error(`Could not sync category: ${mutation.category_name}`)
-    return {
-      user_id: mutation.user_id,
-      category_id: categoryId,
-      period: mutation.period,
-      amount: mutation.amount,
-      note: mutation.note,
-      source: mutation.source,
-    }
-  })
-
-  for (let index = 0; index < rows.length; index += SYNC_CHUNK_SIZE) {
+  const categoryIdFor = (mutation: (typeof allMutations)[number]) => {
+    const id = remoteCategoryIds.get(categoryKey(mutation.category_type, mutation.category_name))
+    if (!id) throw new Error(`Could not sync category: ${mutation.category_name}`)
+    return id
+  }
+  const recordRows = recordMutations.map((mutation) => ({
+    user_id: mutation.user_id,
+    category_id: categoryIdFor(mutation),
+    period: mutation.period,
+    amount: mutation.amount,
+    note: mutation.note,
+    source: mutation.source,
+  }))
+  for (let index = 0; index < recordRows.length; index += SYNC_CHUNK_SIZE) {
     const { error } = await supabase
       .from('worthdelta_monthly_records')
-      .upsert(rows.slice(index, index + SYNC_CHUNK_SIZE), {
+      .upsert(recordRows.slice(index, index + SYNC_CHUNK_SIZE), {
         onConflict: 'user_id,category_id,period',
       })
     if (error) throw error
   }
-
-  await clearSyncedMutations(mutations)
-  return mutations.length
+  const entryRows = entryMutations.map((mutation) => ({
+    id: mutation.id,
+    user_id: mutation.user_id,
+    category_id: categoryIdFor(mutation),
+    entry_date: mutation.entry_date,
+    period: mutation.period,
+    amount: mutation.amount,
+    description: mutation.description,
+    source_type: mutation.source_type,
+    source_sheet: mutation.source_sheet,
+    source_cell: mutation.source_cell,
+    source_formula: mutation.source_formula,
+    external_key: mutation.external_key,
+  }))
+  const importedRows = entryRows.filter((row) => row.external_key)
+  const manualRows = entryRows.filter((row) => !row.external_key)
+  for (let index = 0; index < importedRows.length; index += SYNC_CHUNK_SIZE) {
+    const { error } = await supabase
+      .from('worthdelta_ledger_entries')
+      .upsert(importedRows.slice(index, index + SYNC_CHUNK_SIZE), {
+        onConflict: 'user_id,external_key',
+      })
+    if (error) throw error
+  }
+  for (let index = 0; index < manualRows.length; index += SYNC_CHUNK_SIZE) {
+    const { error } = await supabase
+      .from('worthdelta_ledger_entries')
+      .upsert(manualRows.slice(index, index + SYNC_CHUNK_SIZE), { onConflict: 'id' })
+    if (error) throw error
+  }
+  await clearSyncedMutations(recordMutations, entryMutations)
+  return recordMutations.length + entryMutations.length
 }
 
 export async function refreshRemoteSnapshot(userId: string) {
-  const [categoryResult, recordResult] = await Promise.all([
+  const [categoryResult, recordResult, entryResult] = await Promise.all([
     supabase.from('worthdelta_financial_categories').select('*').order('sort_order'),
     supabase
       .from('worthdelta_monthly_records')
       .select('*, financial_categories:worthdelta_financial_categories(name, category_type)')
       .order('period', { ascending: false }),
+    supabase
+      .from('worthdelta_ledger_entries')
+      .select('*, financial_categories:worthdelta_financial_categories(name, category_type)')
+      .order('entry_date', { ascending: false })
+      .order('created_at', { ascending: false }),
   ])
-  const error = categoryResult.error ?? recordResult.error
+  const error = categoryResult.error ?? recordResult.error ?? entryResult.error
   if (error) throw error
-
   const snapshot: OfflineSnapshot = {
     user_id: userId,
     categories: categoryResult.data as FinancialCategory[],
     records: recordResult.data as unknown as MonthlyRecord[],
+    entries: entryResult.data as unknown as LedgerEntry[],
     updated_at: Date.now(),
   }
-  const remainingMutations = await pendingMutations(userId)
-  remainingMutations.forEach((mutation) => applyMutation(snapshot, mutation))
+  const [remainingRecords, remainingEntries] = await Promise.all([
+    pendingRecordMutations(userId),
+    pendingEntryMutations(userId),
+  ])
+  remainingRecords.forEach((mutation) => applyRecordMutation(snapshot, mutation))
+  remainingEntries.forEach((mutation) => applyEntryMutation(snapshot, mutation))
   await saveSnapshot(snapshot)
-  return { snapshot, pendingCount: remainingMutations.length }
+  return { snapshot, pendingCount: remainingRecords.length + remainingEntries.length }
 }
 
 export function isNetworkError(error: unknown) {

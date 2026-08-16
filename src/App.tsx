@@ -6,8 +6,10 @@ import {
   CloudArrowUp,
   Database,
   FileArrowUp,
+  MagnifyingGlass,
   Money,
   Plus,
+  Receipt,
   SignOut,
   SpinnerGap,
   TrendDown,
@@ -21,12 +23,12 @@ import {
   getPendingChangeCount,
   isNetworkError,
   queueHistoryImport,
-  queueRecordChange,
+  queueLedgerEntry,
   refreshRemoteSnapshot,
   syncPendingChanges,
 } from './lib/offlineStore'
 import { supabase } from './lib/supabase'
-import type { CategoryType, FinancialCategory, MonthlyRecord } from './types'
+import type { CategoryType, FinancialCategory, LedgerEntry, MonthlyRecord } from './types'
 import './App.css'
 
 const categoryMeta: Record<CategoryType, { label: string; icon: typeof Wallet }> = {
@@ -46,6 +48,11 @@ const formatCurrency = (value: number) =>
 const formatMonth = (period: string) =>
   new Intl.DateTimeFormat('en-MY', { month: 'short', year: 'numeric' }).format(
     new Date(`${period.slice(0, 7)}-02T00:00:00`),
+  )
+
+const formatEntryDate = (date: string) =>
+  new Intl.DateTimeFormat('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }).format(
+    new Date(`${date.slice(0, 10)}T00:00:00`),
   )
 
 const HUB_URL = 'https://kencode404.github.io/K-Super-Hub/'
@@ -80,8 +87,8 @@ function HubRedirect() {
   )
 }
 
-function TrendChart({ points }: { points: Array<{ period: string; value: number }> }) {
-  if (points.length < 2) return <div className="chart-empty">Add asset records to reveal your trend.</div>
+function TrendChart({ points, label }: { points: Array<{ period: string; value: number }>; label: string }) {
+  if (points.length < 2) return <div className="chart-empty">Add at least two months for {label || 'this category'} to reveal its trend.</div>
   const width = 760
   const height = 230
   const padding = 18
@@ -98,7 +105,7 @@ function TrendChart({ points }: { points: Array<{ period: string; value: number 
 
   return (
     <div className="chart-wrap">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Asset value trend from ${formatMonth(points[0].period)} to ${formatMonth(points.at(-1)!.period)}`}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${label} trend from ${formatMonth(points[0].period)} to ${formatMonth(points.at(-1)!.period)}`}>
         <defs>
           <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="var(--brand)" stopOpacity="0.28" />
@@ -117,6 +124,7 @@ function TrendChart({ points }: { points: Array<{ period: string; value: number 
 function Dashboard({ session }: { session: Session }) {
   const [categories, setCategories] = useState<FinancialCategory[]>([])
   const [records, setRecords] = useState<MonthlyRecord[]>([])
+  const [entries, setEntries] = useState<LedgerEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [notice, setNotice] = useState('')
@@ -125,13 +133,20 @@ function Dashboard({ session }: { session: Session }) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(navigator.onLine ? 'synced' : 'offline')
   const [type, setType] = useState<CategoryType>('asset')
   const [categoryName, setCategoryName] = useState('')
-  const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7))
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10))
   const [amount, setAmount] = useState('')
+  const [description, setDescription] = useState('')
+  const [ledgerMonth, setLedgerMonth] = useState('')
+  const [ledgerSearch, setLedgerSearch] = useState('')
+  const [visibleEntries, setVisibleEntries] = useState(50)
+  const [chartType, setChartType] = useState<CategoryType>('asset')
+  const [chartCategory, setChartCategory] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const showSnapshot = useCallback((snapshot: { categories: FinancialCategory[]; records: MonthlyRecord[] }) => {
+  const showSnapshot = useCallback((snapshot: { categories: FinancialCategory[]; records: MonthlyRecord[]; entries: LedgerEntry[] }) => {
     setCategories(snapshot.categories)
     setRecords(snapshot.records)
+    setEntries(snapshot.entries)
   }, [])
 
   const loadData = useCallback(async (showLoading = true) => {
@@ -190,7 +205,7 @@ function Dashboard({ session }: { session: Session }) {
     return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([pointPeriod, value]) => ({ period: pointPeriod, value }))
   }, [records])
 
-  const activePeriod = assetTrend.at(-1)?.period ?? records[0]?.period ?? `${period}-01`
+  const activePeriod = assetTrend.at(-1)?.period ?? records[0]?.period ?? `${entryDate.slice(0, 7)}-01`
   const monthRecords = records.filter((record) => record.period === activePeriod)
   const totalFor = (recordType: CategoryType) => monthRecords
     .filter((record) => record.financial_categories?.category_type === recordType)
@@ -199,26 +214,42 @@ function Dashboard({ session }: { session: Session }) {
   const income = totalFor('income')
   const expenses = totalFor('expense')
   const investments = totalFor('investment')
+  const chartCategories = categories.filter((category) => category.category_type === chartType)
+  const activeChartCategory = chartCategories.some((category) => category.name === chartCategory)
+    ? chartCategory
+    : chartCategories[0]?.name ?? ''
+  const categoryTrend = records
+    .filter((record) =>
+      record.financial_categories?.category_type === chartType &&
+      record.financial_categories?.name === activeChartCategory,
+    )
+    .sort((a, b) => a.period.localeCompare(b.period))
+    .map((record) => ({ period: record.period, value: Number(record.amount) }))
+  const categoryChange = categoryTrend.length > 1
+    ? categoryTrend.at(-1)!.value - categoryTrend[0].value
+    : 0
 
   async function handleSave(event: React.FormEvent) {
     event.preventDefault()
-    if (!categoryName.trim() || !amount) return
+    if (!categoryName.trim() || !description.trim() || !entryDate || !amount) return
     setSaving(true)
     setNotice('')
 
     try {
-      const queued = await queueRecordChange({
+      const queued = await queueLedgerEntry({
         userId: session.user.id,
         categoryType: type,
         categoryName,
         categorySortOrder: categories.length + 1,
-        period: `${period}-01`,
+        period: `${entryDate.slice(0, 7)}-01`,
+        entryDate,
         amount: Number(amount),
+        description,
       })
       showSnapshot(queued.snapshot)
       setPendingCount(queued.pendingCount)
       setAmount('')
-      setCategoryName('')
+      setDescription('')
 
       if (!navigator.onLine) {
         setSyncStatus('offline')
@@ -233,7 +264,7 @@ function Dashboard({ session }: { session: Session }) {
       setPendingCount(remote.pendingCount)
       setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
       setLoadError('')
-      setNotice('Record saved and synced.')
+      setNotice('Detailed entry saved and synced.')
     } catch (error) {
       const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
       setPendingCount(queued)
@@ -266,10 +297,10 @@ function Dashboard({ session }: { session: Session }) {
         showSnapshot(remote.snapshot)
         setPendingCount(remote.pendingCount)
         setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
-        setNotice(`Imported and synced ${result.records.toLocaleString()} records across ${result.categories} categories.`)
+        setNotice(`Imported and synced ${result.entries.toLocaleString()} traceable entries and ${result.records.toLocaleString()} monthly summaries across ${result.categories} categories.`)
       } else {
         setSyncStatus('offline')
-        setNotice(`Imported ${result.records.toLocaleString()} records on this device. They will sync when you reconnect.`)
+        setNotice(`Imported ${result.entries.toLocaleString()} traceable entries on this device. They will sync when you reconnect.`)
       }
     } catch (importError) {
       const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
@@ -287,6 +318,19 @@ function Dashboard({ session }: { session: Session }) {
   }
 
   const filteredCategories = categories.filter((category) => category.category_type === type)
+  const ledgerMonths = [...new Set(entries.map((entry) => entry.period.slice(0, 7)))].sort().reverse()
+  const filteredEntries = entries.filter((entry) => {
+    if (ledgerMonth && entry.period.slice(0, 7) !== ledgerMonth) return false
+    const search = ledgerSearch.trim().toLocaleLowerCase('en')
+    if (!search) return true
+    return [
+      entry.description,
+      entry.financial_categories?.name,
+      entry.source_sheet,
+      entry.source_cell,
+      entry.source_formula,
+    ].some((value) => value?.toLocaleLowerCase('en').includes(search))
+  })
   const SyncIcon = syncStatus === 'offline'
     ? WifiSlash
     : syncStatus === 'synced'
@@ -305,14 +349,14 @@ function Dashboard({ session }: { session: Session }) {
     <div className="dashboard-shell">
       <aside className="sidebar">
         <a className="brand brand-light" href={import.meta.env.BASE_URL} aria-label="WorthDelta home"><span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span><span>WorthDelta</span></a>
-        <nav aria-label="Dashboard"><a className="nav-item active" href="#overview"><ChartLineUp aria-hidden="true" />Overview</a><a className="nav-item" href="#records"><Money aria-hidden="true" />Records</a></nav>
+        <nav aria-label="Dashboard"><a className="nav-item active" href="#overview"><ChartLineUp aria-hidden="true" />Overview</a><a className="nav-item" href="#records"><Money aria-hidden="true" />Add entry</a><a className="nav-item" href="#ledger"><Receipt aria-hidden="true" />Ledger</a></nav>
         <div className="sidebar-user"><span className="avatar">{(session.user.email?.[0] ?? 'W').toUpperCase()}</span><span><strong>{session.user.user_metadata.full_name ?? 'WorthDelta user'}</strong><small>{session.user.email}</small></span><button type="button" onClick={() => void supabase.auth.signOut()} aria-label="Sign out"><SignOut aria-hidden="true" /></button></div>
       </aside>
 
       <main className="dashboard-main" id="overview">
         <header className="dashboard-header"><div><p className="eyebrow">Personal finance dashboard</p><h1>Your worth, in motion.</h1><p>Latest asset snapshot: {formatMonth(activePeriod)}</p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span><button className="outline-button" type="button" onClick={() => fileInput.current?.click()} disabled={saving}><FileArrowUp aria-hidden="true" />Import history</button><input ref={fileInput} className="sr-only" type="file" accept="application/json,.json" onChange={handleImport} /></div></header>
 
-        {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>{databaseSetupRequired ? 'Database setup required' : 'Sync paused'}</strong><p>{databaseSetupRequired ? 'Run the included Supabase migration before adding or importing records.' : `${loadError} Your locally saved changes are safe and will retry automatically.`}</p>{databaseSetupRequired && <code>supabase/migrations/20260816000000_initial_worthdelta.sql</code>}</div></section>}
+        {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>{databaseSetupRequired ? 'Database setup required' : 'Sync paused'}</strong><p>{databaseSetupRequired ? 'Run the included traceable-ledger migration before adding or importing detailed entries.' : `${loadError} Your locally saved changes are safe and will retry automatically.`}</p>{databaseSetupRequired && <code>supabase/migrations/20260816030000_traceable_ledger.sql</code>}</div></section>}
         {notice && <p className="notice" role="status">{notice}</p>}
 
         <section className="metric-grid" aria-label="Monthly summary">
@@ -323,17 +367,37 @@ function Dashboard({ session }: { session: Session }) {
         </section>
 
         <section className="dashboard-grid">
-          <article className="panel trend-panel"><div className="panel-heading"><div><p className="eyebrow">Asset trajectory</p><h2>12-month trend</h2></div>{assetTrend.length > 1 && <span className="trend-badge"><TrendUp aria-hidden="true" />{formatCurrency(assetTrend.at(-1)!.value - assetTrend[0].value)}</span>}</div>{loading ? <div className="loading-state"><SpinnerGap className="spin" aria-hidden="true" />Loading records…</div> : <TrendChart points={assetTrend} />}</article>
+          <article className="panel trend-panel">
+            <div className="panel-heading category-chart-heading"><div><p className="eyebrow">Category history</p><h2>{activeChartCategory || 'Choose a category'}</h2><p>{categoryTrend.length ? `${categoryTrend.length} monthly values · ${formatMonth(categoryTrend[0].period)}–${formatMonth(categoryTrend.at(-1)!.period)}` : 'No monthly values yet'}</p></div>{categoryTrend.length > 1 && <span className={`trend-badge ${categoryChange < 0 ? 'negative' : ''}`}>{categoryChange < 0 ? <TrendDown aria-hidden="true" /> : <TrendUp aria-hidden="true" />}{formatCurrency(categoryChange)}</span>}</div>
+            <div className="chart-controls">
+              <label><span>Record type</span><select aria-label="Chart record type" value={chartType} onChange={(event) => { setChartType(event.target.value as CategoryType); setChartCategory('') }}>{(Object.keys(categoryMeta) as CategoryType[]).map((key) => <option key={key} value={key}>{categoryMeta[key].label}</option>)}</select></label>
+              <label><span>Category</span><select aria-label="Chart category" value={activeChartCategory} onChange={(event) => setChartCategory(event.target.value)}>{chartCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label>
+            </div>
+            {loading ? <div className="loading-state"><SpinnerGap className="spin" aria-hidden="true" />Loading records…</div> : <TrendChart points={categoryTrend} label={activeChartCategory} />}
+          </article>
 
-          <article className="panel add-panel" id="records"><div className="panel-heading"><div><p className="eyebrow">Future records</p><h2>Add or update a month</h2></div><Plus aria-hidden="true" /></div><form onSubmit={handleSave}>
+          <article className="panel add-panel" id="records"><div className="panel-heading"><div><p className="eyebrow">Traceable ledger</p><h2>Add a detailed entry</h2></div><Plus aria-hidden="true" /></div><form onSubmit={handleSave}>
             <label><span>Record type</span><select value={type} onChange={(event) => { setType(event.target.value as CategoryType); setCategoryName('') }}>{(Object.keys(categoryMeta) as CategoryType[]).map((key) => <option key={key} value={key}>{categoryMeta[key].label}</option>)}</select></label>
             <label><span>Category</span><input list="category-list" value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="Choose or create a category" required /><datalist id="category-list">{filteredCategories.map((category) => <option key={category.id} value={category.name} />)}</datalist></label>
-            <div className="form-row"><label><span>Month</span><input type="month" value={period} onChange={(event) => setPeriod(event.target.value)} required /></label><label><span>Amount (MYR)</span><input type="number" inputMode="decimal" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></label></div>
-            <button className="primary-button" type="submit" disabled={saving || !!loadError}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}Save record</button>
+            <label><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What makes up this amount?" maxLength={200} required /></label>
+            <div className="form-row"><label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} required /></label><label><span>Amount (MYR)</span><input type="number" inputMode="decimal" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></label></div>
+            <button className="primary-button" type="submit" disabled={saving || !!loadError}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}Save detailed entry</button>
           </form></article>
         </section>
 
-        <section className="panel recent-panel"><div className="panel-heading"><div><p className="eyebrow">Recent activity</p><h2>Latest records</h2></div></div>{records.length === 0 ? <div className="empty-state"><Database aria-hidden="true" /><h3>No records yet</h3><p>Import the prepared history file or add your first monthly record.</p></div> : <div className="record-list">{records.slice(0, 8).map((record) => { const meta = categoryMeta[record.financial_categories?.category_type ?? 'expense']; const Icon = meta.icon; return <div className="record-row" key={record.id}><span className={`record-icon ${record.financial_categories?.category_type}`}><Icon aria-hidden="true" /></span><span className="record-name"><strong>{record.financial_categories?.name}</strong><small>{meta.label} · {formatMonth(record.period)}</small></span><strong className="record-amount">{formatCurrency(Number(record.amount))}</strong></div>})}</div>}</section>
+        <section className="panel recent-panel" id="ledger">
+          <div className="ledger-heading">
+            <div><p className="eyebrow">Audit trail</p><h2>Traceable entries</h2><p>{filteredEntries.length.toLocaleString()} of {entries.length.toLocaleString()} entries</p></div>
+            <div className="ledger-filters">
+              <label><span className="sr-only">Filter by month</span><select value={ledgerMonth} onChange={(event) => { setLedgerMonth(event.target.value); setVisibleEntries(50) }}><option value="">All months</option>{ledgerMonths.map((month) => <option key={month} value={month}>{formatMonth(`${month}-01`)}</option>)}</select></label>
+              <label className="search-field"><MagnifyingGlass aria-hidden="true" /><span className="sr-only">Search ledger</span><input type="search" value={ledgerSearch} onChange={(event) => { setLedgerSearch(event.target.value); setVisibleEntries(50) }} placeholder="Search entry or source" /></label>
+            </div>
+          </div>
+          {entries.length === 0 ? <div className="empty-state"><Receipt aria-hidden="true" /><h3>No detailed entries yet</h3><p>Import the detailed history or add an entry to start the audit trail.</p></div> : filteredEntries.length === 0 ? <div className="empty-state"><MagnifyingGlass aria-hidden="true" /><h3>No matching entries</h3><p>Try another month or search term.</p></div> : <>
+            <div className="record-list ledger-list">{filteredEntries.slice(0, visibleEntries).map((entry) => { const meta = categoryMeta[entry.financial_categories?.category_type ?? 'expense']; const Icon = meta.icon; const source = entry.source_type === 'google_sheets' ? `${entry.source_sheet} · ${entry.source_cell}` : 'Manual entry'; return <div className="record-row ledger-row" key={entry.id}><span className={`record-icon ${entry.financial_categories?.category_type}`}><Icon aria-hidden="true" /></span><span className="record-name"><strong>{entry.description}</strong><small>{entry.financial_categories?.name} · {formatEntryDate(entry.entry_date)}</small>{entry.source_formula ? <details className="source-detail"><summary>{source}</summary><code>{entry.source_formula}</code></details> : <small className="entry-source">{source}</small>}</span><strong className="record-amount">{formatCurrency(Number(entry.amount))}</strong></div>})}</div>
+            {visibleEntries < filteredEntries.length && <button className="load-more" type="button" onClick={() => setVisibleEntries((count) => count + 50)}>Show 50 more</button>}
+          </>}
+        </section>
       </main>
     </div>
   )

@@ -19,6 +19,24 @@ export interface MonthlyRecord {
   financial_categories?: Pick<FinancialCategory, 'name' | 'category_type'> | null
 }
 
+export interface LedgerEntry {
+  id: string
+  user_id: string
+  category_id: string
+  entry_date: string
+  period: string
+  amount: number
+  description: string
+  source_type: 'manual' | 'google_sheets'
+  source_sheet: string | null
+  source_cell: string | null
+  source_formula: string | null
+  external_key: string | null
+  created_at?: string
+  updated_at?: string
+  financial_categories?: Pick<FinancialCategory, 'name' | 'category_type'> | null
+}
+
 export interface HistoryFile {
   source: {
     spreadsheet_id: string
@@ -37,5 +55,18 @@ export interface HistoryFile {
     amount: number
     source_sheet: string
     source_row: number
+  }>
+  entries?: Array<{
+    period: string
+    entry_date: string
+    type: CategoryType
+    category: string
+    amount: number
+    description: string
+    source_sheet: string
+    source_cell: string
+    source_formula: string | null
+    component_index: number
+    external_key: string
   }>
 }
