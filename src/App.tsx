@@ -227,7 +227,10 @@ function Dashboard({ session }: { session: Session }) {
   const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const handleHashChange = () => setView(window.location.hash === '#records' ? 'records' : 'overview')
+    const handleHashChange = () => {
+      setView(window.location.hash === '#records' ? 'records' : 'overview')
+      window.scrollTo({ top: 0, behavior: 'auto' })
+    }
     if (window.location.hash !== '#overview' && window.location.hash !== '#records') {
       window.history.replaceState(null, '', '#overview')
     }
