@@ -8,8 +8,9 @@ import type {
 } from '../types'
 
 const DATABASE_NAME = 'worthdelta-offline'
-const DATABASE_VERSION = 2
+const DATABASE_VERSION = 3
 const SNAPSHOT_STORE = 'snapshots'
+const CATEGORY_MUTATION_STORE = 'category-mutations'
 const MUTATION_STORE = 'mutations'
 const ENTRY_MUTATION_STORE = 'entry-mutations'
 const SYNC_CHUNK_SIZE = 250
@@ -34,6 +35,16 @@ interface PendingRecordMutation {
   amount: number
   note: string | null
   source: string
+  updated_at: number
+}
+
+interface PendingCategoryMutation {
+  id: string
+  user_id: string
+  category_type: CategoryType
+  category_name: string
+  category_sort_order: number
+  local_category_id: string
   updated_at: number
 }
 
@@ -68,6 +79,13 @@ interface QueueRecordInput {
   source?: string
 }
 
+interface QueueCategoryInput {
+  userId: string
+  categoryType: CategoryType
+  categoryName: string
+  categorySortOrder: number
+}
+
 interface QueueEntryInput extends QueueRecordInput {
   entryDate: string
   description: string
@@ -89,6 +107,10 @@ function openDatabase() {
       if (!database.objectStoreNames.contains(SNAPSHOT_STORE)) {
         database.createObjectStore(SNAPSHOT_STORE, { keyPath: 'user_id' })
       }
+      if (!database.objectStoreNames.contains(CATEGORY_MUTATION_STORE)) {
+        const store = database.createObjectStore(CATEGORY_MUTATION_STORE, { keyPath: 'id' })
+        store.createIndex('user_id', 'user_id')
+      }
       if (!database.objectStoreNames.contains(MUTATION_STORE)) {
         const store = database.createObjectStore(MUTATION_STORE, { keyPath: 'id' })
         store.createIndex('user_id', 'user_id')
@@ -98,7 +120,10 @@ function openDatabase() {
         store.createIndex('user_id', 'user_id')
       }
     }
-    request.onsuccess = () => resolve(request.result)
+    request.onsuccess = () => {
+      request.result.onversionchange = () => request.result.close()
+      resolve(request.result)
+    }
     request.onerror = () => reject(request.error)
     request.onblocked = () => reject(new Error('WorthDelta offline storage is blocked by another tab.'))
   })
@@ -155,7 +180,7 @@ function sortSnapshot(snapshot: OfflineSnapshot) {
 
 function ensureCategory(
   snapshot: OfflineSnapshot,
-  mutation: Pick<PendingRecordMutation, 'category_type' | 'category_name' | 'category_sort_order' | 'local_category_id' | 'user_id'>,
+  mutation: Pick<PendingCategoryMutation, 'category_type' | 'category_name' | 'category_sort_order' | 'local_category_id' | 'user_id'>,
 ) {
   const wantedCategoryKey = categoryKey(mutation.category_type, mutation.category_name)
   let category = snapshot.categories.find(
@@ -172,6 +197,11 @@ function ensureCategory(
     snapshot.categories.push(category)
   }
   return category
+}
+
+function applyCategoryMutation(snapshot: OfflineSnapshot, mutation: PendingCategoryMutation) {
+  ensureCategory(snapshot, mutation)
+  return sortSnapshot(snapshot)
 }
 
 function applyRecordMutation(snapshot: OfflineSnapshot, mutation: PendingRecordMutation) {
@@ -253,6 +283,22 @@ function createRecordMutation(snapshot: OfflineSnapshot, input: QueueRecordInput
   }
 }
 
+function createCategoryMutation(snapshot: OfflineSnapshot, input: QueueCategoryInput): PendingCategoryMutation {
+  const name = input.categoryName.trim()
+  const existing = snapshot.categories.find(
+    (item) => categoryKey(item.category_type, item.name) === categoryKey(input.categoryType, name),
+  )
+  return {
+    id: `${input.userId}|${categoryKey(input.categoryType, name)}`,
+    user_id: input.userId,
+    category_type: input.categoryType,
+    category_name: name,
+    category_sort_order: existing?.sort_order ?? input.categorySortOrder,
+    local_category_id: existing?.id ?? crypto.randomUUID(),
+    updated_at: Date.now(),
+  }
+}
+
 function createEntryMutation(snapshot: OfflineSnapshot, input: QueueEntryInput): PendingEntryMutation {
   const name = input.categoryName.trim()
   const category = snapshot.categories.find(
@@ -292,18 +338,31 @@ async function saveSnapshotAndMutations(
   snapshot: OfflineSnapshot,
   recordMutations: PendingRecordMutation[],
   entryMutations: PendingEntryMutation[],
+  categoryMutations: PendingCategoryMutation[] = [],
 ) {
   const database = await openDatabase()
   const transaction = database.transaction(
-    [SNAPSHOT_STORE, MUTATION_STORE, ENTRY_MUTATION_STORE],
+    [SNAPSHOT_STORE, CATEGORY_MUTATION_STORE, MUTATION_STORE, ENTRY_MUTATION_STORE],
     'readwrite',
   )
   transaction.objectStore(SNAPSHOT_STORE).put(snapshot)
+  const categoryStore = transaction.objectStore(CATEGORY_MUTATION_STORE)
+  categoryMutations.forEach((mutation) => categoryStore.put(mutation))
   const recordStore = transaction.objectStore(MUTATION_STORE)
   recordMutations.forEach((mutation) => recordStore.put(mutation))
   const entryStore = transaction.objectStore(ENTRY_MUTATION_STORE)
   entryMutations.forEach((mutation) => entryStore.put(mutation))
   await transactionComplete(transaction)
+}
+
+async function pendingCategoryMutations(userId: string) {
+  const database = await openDatabase()
+  const transaction = database.transaction(CATEGORY_MUTATION_STORE, 'readonly')
+  const mutations = await requestResult(
+    transaction.objectStore(CATEGORY_MUTATION_STORE).index('user_id').getAll(userId),
+  ) as PendingCategoryMutation[]
+  await transactionComplete(transaction)
+  return mutations.sort((a, b) => a.updated_at - b.updated_at)
 }
 
 async function pendingRecordMutations(userId: string) {
@@ -327,14 +386,26 @@ async function pendingEntryMutations(userId: string) {
 }
 
 async function clearSyncedMutations(
+  categoryMutations: PendingCategoryMutation[],
   recordMutations: PendingRecordMutation[],
   entryMutations: PendingEntryMutation[],
 ) {
-  if (recordMutations.length === 0 && entryMutations.length === 0) return
+  if (categoryMutations.length === 0 && recordMutations.length === 0 && entryMutations.length === 0) return
   const database = await openDatabase()
-  const transaction = database.transaction([MUTATION_STORE, ENTRY_MUTATION_STORE], 'readwrite')
+  const transaction = database.transaction(
+    [CATEGORY_MUTATION_STORE, MUTATION_STORE, ENTRY_MUTATION_STORE],
+    'readwrite',
+  )
+  const categoryStore = transaction.objectStore(CATEGORY_MUTATION_STORE)
   const recordStore = transaction.objectStore(MUTATION_STORE)
   const entryStore = transaction.objectStore(ENTRY_MUTATION_STORE)
+  categoryMutations.forEach((mutation) => {
+    const request = categoryStore.get(mutation.id)
+    request.onsuccess = () => {
+      const current = request.result as PendingCategoryMutation | undefined
+      if (current?.updated_at === mutation.updated_at) categoryStore.delete(mutation.id)
+    }
+  })
   recordMutations.forEach((mutation) => {
     const request = recordStore.get(mutation.id)
     request.onsuccess = () => {
@@ -363,11 +434,20 @@ export async function getOfflineSnapshot(userId: string) {
 }
 
 export async function getPendingChangeCount(userId: string) {
-  const [records, entries] = await Promise.all([
+  const [categories, records, entries] = await Promise.all([
+    pendingCategoryMutations(userId),
     pendingRecordMutations(userId),
     pendingEntryMutations(userId),
   ])
-  return records.length + entries.length
+  return categories.length + records.length + entries.length
+}
+
+export async function queueCategory(input: QueueCategoryInput) {
+  const snapshot = (await getOfflineSnapshot(input.userId)) ?? emptySnapshot(input.userId)
+  const mutation = createCategoryMutation(snapshot, input)
+  applyCategoryMutation(snapshot, mutation)
+  await saveSnapshotAndMutations(snapshot, [], [], [mutation])
+  return { snapshot, pendingCount: await getPendingChangeCount(input.userId) }
 }
 
 export async function queueLedgerEntry(input: QueueEntryInput) {
@@ -443,13 +523,14 @@ export async function queueHistoryImport(payload: HistoryFile, userId: string) {
 }
 
 export async function syncPendingChanges(userId: string) {
-  const [recordMutations, entryMutations] = await Promise.all([
+  const [categoryMutations, recordMutations, entryMutations] = await Promise.all([
+    pendingCategoryMutations(userId),
     pendingRecordMutations(userId),
     pendingEntryMutations(userId),
   ])
-  if (recordMutations.length === 0 && entryMutations.length === 0) return 0
+  if (categoryMutations.length === 0 && recordMutations.length === 0 && entryMutations.length === 0) return 0
   if (!navigator.onLine) throw new Error('WorthDelta is offline.')
-  const allMutations = [...recordMutations, ...entryMutations]
+  const allMutations = [...categoryMutations, ...recordMutations, ...entryMutations]
   const uniqueCategories = new Map<string, (typeof allMutations)[number]>()
   allMutations.forEach((mutation) => {
     uniqueCategories.set(categoryKey(mutation.category_type, mutation.category_name), mutation)
@@ -524,8 +605,8 @@ export async function syncPendingChanges(userId: string) {
       .upsert(manualRows.slice(index, index + SYNC_CHUNK_SIZE), { onConflict: 'id' })
     if (error) throw error
   }
-  await clearSyncedMutations(recordMutations, entryMutations)
-  return recordMutations.length + entryMutations.length
+  await clearSyncedMutations(categoryMutations, recordMutations, entryMutations)
+  return categoryMutations.length + recordMutations.length + entryMutations.length
 }
 
 async function fetchAllMonthlyRecords() {
@@ -571,14 +652,19 @@ export async function refreshRemoteSnapshot(userId: string) {
     entries: remoteEntries,
     updated_at: Date.now(),
   }
-  const [remainingRecords, remainingEntries] = await Promise.all([
+  const [remainingCategories, remainingRecords, remainingEntries] = await Promise.all([
+    pendingCategoryMutations(userId),
     pendingRecordMutations(userId),
     pendingEntryMutations(userId),
   ])
+  remainingCategories.forEach((mutation) => applyCategoryMutation(snapshot, mutation))
   remainingRecords.forEach((mutation) => applyRecordMutation(snapshot, mutation))
   remainingEntries.forEach((mutation) => applyEntryMutation(snapshot, mutation))
   await saveSnapshot(snapshot)
-  return { snapshot, pendingCount: remainingRecords.length + remainingEntries.length }
+  return {
+    snapshot,
+    pendingCount: remainingCategories.length + remainingRecords.length + remainingEntries.length,
+  }
 }
 
 export function isNetworkError(error: unknown) {
