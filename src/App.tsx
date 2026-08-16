@@ -51,8 +51,16 @@ const formatMonth = (period: string) =>
 const HUB_URL = 'https://kencode404.github.io/K-Super-Hub/'
 type SyncStatus = 'offline' | 'syncing' | 'pending' | 'synced'
 
-const messageFrom = (error: unknown) =>
-  error instanceof Error ? error.message : 'Something went wrong.'
+const messageFrom = (error: unknown) => {
+  if (error instanceof Error) return error.message
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) return error.message
+  return 'Something went wrong.'
+}
 
 function HubRedirect() {
   useEffect(() => {
@@ -291,6 +299,7 @@ function Dashboard({ session }: { session: Session }) {
       : syncStatus === 'pending'
         ? `${pendingCount} waiting to sync`
         : 'All changes synced'
+  const databaseSetupRequired = /schema cache|PGRST205|could not find the table/i.test(loadError)
 
   return (
     <div className="dashboard-shell">
@@ -303,7 +312,7 @@ function Dashboard({ session }: { session: Session }) {
       <main className="dashboard-main" id="overview">
         <header className="dashboard-header"><div><p className="eyebrow">Personal finance dashboard</p><h1>Your worth, in motion.</h1><p>Latest asset snapshot: {formatMonth(activePeriod)}</p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span><button className="outline-button" type="button" onClick={() => fileInput.current?.click()} disabled={saving}><FileArrowUp aria-hidden="true" />Import history</button><input ref={fileInput} className="sr-only" type="file" accept="application/json,.json" onChange={handleImport} /></div></header>
 
-        {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>Database setup required</strong><p>{loadError.includes('schema cache') ? 'Run the included Supabase migration before adding or importing records.' : loadError}</p><code>supabase/migrations/20260816000000_initial_worthdelta.sql</code></div></section>}
+        {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>{databaseSetupRequired ? 'Database setup required' : 'Sync paused'}</strong><p>{databaseSetupRequired ? 'Run the included Supabase migration before adding or importing records.' : `${loadError} Your locally saved changes are safe and will retry automatically.`}</p>{databaseSetupRequired && <code>supabase/migrations/20260816000000_initial_worthdelta.sql</code>}</div></section>}
         {notice && <p className="notice" role="status">{notice}</p>}
 
         <section className="metric-grid" aria-label="Monthly summary">
