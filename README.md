@@ -12,6 +12,7 @@ Vite, and Supabase.
 - Add/update workflow for future monthly records
 - One-time import of the normalized 2022–2026 Google Sheets history
 - Installable phone PWA with WorthDelta home-screen icons
+- Offline-first IndexedDB cache with automatic Supabase synchronization
 
 All app-owned database objects use the `worthdelta_` prefix so this Supabase
 schema can safely host additional applications.
@@ -34,6 +35,14 @@ The app reads its Supabase connection from `.env.local`.
 The import is idempotent: importing the file again updates the same monthly
 category records instead of duplicating them. The JSON is ignored by Git and is
 never bundled into the frontend.
+
+## Offline use
+
+After the first signed-in visit, WorthDelta can open without a network
+connection. Dashboard data is cached per user in IndexedDB. Manual records and
+history imports made offline are stored in a durable queue and synchronized with
+Supabase when the browser reconnects. Repeated edits to the same category and
+month are coalesced before synchronization.
 
 ## Shared authentication
 

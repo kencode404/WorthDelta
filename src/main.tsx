@@ -16,3 +16,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     })
   })
 }
+
+if ('storage' in navigator && 'persist' in navigator.storage) {
+  void navigator.storage.persist()
+}

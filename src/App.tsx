@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
+  CheckCircle,
   ChartLineUp,
+  CloudArrowUp,
   Database,
   FileArrowUp,
   Money,
@@ -11,8 +13,18 @@ import {
   TrendDown,
   TrendUp,
   Wallet,
+  WifiSlash,
 } from '@phosphor-icons/react'
-import { importHistory } from './lib/historyImport'
+import { readHistoryFile } from './lib/historyImport'
+import {
+  getOfflineSnapshot,
+  getPendingChangeCount,
+  isNetworkError,
+  queueHistoryImport,
+  queueRecordChange,
+  refreshRemoteSnapshot,
+  syncPendingChanges,
+} from './lib/offlineStore'
 import { supabase } from './lib/supabase'
 import type { CategoryType, FinancialCategory, MonthlyRecord } from './types'
 import './App.css'
@@ -37,6 +49,10 @@ const formatMonth = (period: string) =>
   )
 
 const HUB_URL = 'https://kencode404.github.io/K-Super-Hub/'
+type SyncStatus = 'offline' | 'syncing' | 'pending' | 'synced'
+
+const messageFrom = (error: unknown) =>
+  error instanceof Error ? error.message : 'Something went wrong.'
 
 function HubRedirect() {
   useEffect(() => {
@@ -97,30 +113,66 @@ function Dashboard({ session }: { session: Session }) {
   const [loadError, setLoadError] = useState('')
   const [notice, setNotice] = useState('')
   const [saving, setSaving] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(navigator.onLine ? 'synced' : 'offline')
   const [type, setType] = useState<CategoryType>('asset')
   const [categoryName, setCategoryName] = useState('')
   const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7))
   const [amount, setAmount] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
 
-  async function loadData() {
-    setLoading(true)
-    const [categoryResult, recordResult] = await Promise.all([
-      supabase.from('worthdelta_financial_categories').select('*').order('sort_order'),
-      supabase.from('worthdelta_monthly_records').select('*, financial_categories:worthdelta_financial_categories(name, category_type)').order('period', { ascending: false }),
-    ])
-    setLoading(false)
-    const error = categoryResult.error ?? recordResult.error
-    if (error) {
-      setLoadError(error.message)
-      return
-    }
-    setLoadError('')
-    setCategories(categoryResult.data as FinancialCategory[])
-    setRecords(recordResult.data as unknown as MonthlyRecord[])
-  }
+  const showSnapshot = useCallback((snapshot: { categories: FinancialCategory[]; records: MonthlyRecord[] }) => {
+    setCategories(snapshot.categories)
+    setRecords(snapshot.records)
+  }, [])
 
-  useEffect(() => { void loadData() }, [])
+  const loadData = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true)
+
+    try {
+      const cached = await getOfflineSnapshot(session.user.id)
+      if (cached) showSnapshot(cached)
+
+      const queued = await getPendingChangeCount(session.user.id)
+      setPendingCount(queued)
+      if (!navigator.onLine) {
+        setSyncStatus('offline')
+        setLoadError('')
+        return
+      }
+
+      if (queued > 0) {
+        setSyncStatus('syncing')
+        await syncPendingChanges(session.user.id)
+      }
+
+      const remote = await refreshRemoteSnapshot(session.user.id)
+      showSnapshot(remote.snapshot)
+      setPendingCount(remote.pendingCount)
+      setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
+      setLoadError('')
+    } catch (error) {
+      const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
+      setPendingCount(queued)
+      setSyncStatus(navigator.onLine ? 'pending' : 'offline')
+      if (isNetworkError(error)) setLoadError('')
+      else setLoadError(messageFrom(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [session.user.id, showSnapshot])
+
+  useEffect(() => {
+    void loadData()
+    const handleOnline = () => void loadData(false)
+    const handleOffline = () => setSyncStatus('offline')
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [loadData])
 
   const assetTrend = useMemo(() => {
     const totals = new Map<string, number>()
@@ -146,40 +198,80 @@ function Dashboard({ session }: { session: Session }) {
     setSaving(true)
     setNotice('')
 
-    let category = categories.find((item) => item.category_type === type && item.name.toLocaleLowerCase() === categoryName.trim().toLocaleLowerCase())
-    if (!category) {
-      const { data, error } = await supabase.from('worthdelta_financial_categories').insert({ user_id: session.user.id, category_type: type, name: categoryName.trim(), sort_order: categories.length + 1 }).select().single()
-      if (error) { setNotice(error.message); setSaving(false); return }
-      category = data as FinancialCategory
+    try {
+      const queued = await queueRecordChange({
+        userId: session.user.id,
+        categoryType: type,
+        categoryName,
+        categorySortOrder: categories.length + 1,
+        period: `${period}-01`,
+        amount: Number(amount),
+      })
+      showSnapshot(queued.snapshot)
+      setPendingCount(queued.pendingCount)
+      setAmount('')
+      setCategoryName('')
+
+      if (!navigator.onLine) {
+        setSyncStatus('offline')
+        setNotice('Saved on this device. It will sync automatically when you reconnect.')
+        return
+      }
+
+      setSyncStatus('syncing')
+      await syncPendingChanges(session.user.id)
+      const remote = await refreshRemoteSnapshot(session.user.id)
+      showSnapshot(remote.snapshot)
+      setPendingCount(remote.pendingCount)
+      setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
+      setLoadError('')
+      setNotice('Record saved and synced.')
+    } catch (error) {
+      const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
+      setPendingCount(queued)
+      setSyncStatus(navigator.onLine ? 'pending' : 'offline')
+      setNotice(queued > 0
+        ? 'Saved on this device. Sync will retry automatically.'
+        : messageFrom(error))
+      if (!isNetworkError(error) && queued === 0) setLoadError(messageFrom(error))
+    } finally {
+      setSaving(false)
     }
-
-    const { error } = await supabase.from('worthdelta_monthly_records').upsert({
-      user_id: session.user.id,
-      category_id: category.id,
-      period: `${period}-01`,
-      amount: Number(amount),
-      source: 'manual',
-    }, { onConflict: 'user_id,category_id,period' })
-
-    setSaving(false)
-    if (error) { setNotice(error.message); return }
-    setAmount('')
-    setCategoryName('')
-    setNotice('Record saved.')
-    await loadData()
   }
 
   async function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
     setSaving(true)
-    setNotice('Importing your history…')
+    setNotice('Saving your history on this device…')
     try {
-      const result = await importHistory(file, session.user)
-      setNotice(`Imported ${result.records.toLocaleString()} records across ${result.categories} categories.`)
-      await loadData()
+      const payload = await readHistoryFile(file)
+      const result = await queueHistoryImport(payload, session.user.id)
+      showSnapshot(result.snapshot)
+      setPendingCount(result.pendingCount)
+
+      if (navigator.onLine) {
+        setSyncStatus('syncing')
+        setNotice('History saved locally. Syncing it now…')
+        await syncPendingChanges(session.user.id)
+        const remote = await refreshRemoteSnapshot(session.user.id)
+        showSnapshot(remote.snapshot)
+        setPendingCount(remote.pendingCount)
+        setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
+        setNotice(`Imported and synced ${result.records.toLocaleString()} records across ${result.categories} categories.`)
+      } else {
+        setSyncStatus('offline')
+        setNotice(`Imported ${result.records.toLocaleString()} records on this device. They will sync when you reconnect.`)
+      }
     } catch (importError) {
-      setNotice(importError instanceof Error ? importError.message : 'Import failed.')
+      const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
+      setPendingCount(queued)
+      if (queued > 0) {
+        setSyncStatus(navigator.onLine ? 'pending' : 'offline')
+        setNotice('History is safe on this device. Sync will retry automatically.')
+      } else {
+        setNotice(importError instanceof Error ? importError.message : 'Import failed.')
+      }
     } finally {
       setSaving(false)
       event.target.value = ''
@@ -187,6 +279,18 @@ function Dashboard({ session }: { session: Session }) {
   }
 
   const filteredCategories = categories.filter((category) => category.category_type === type)
+  const SyncIcon = syncStatus === 'offline'
+    ? WifiSlash
+    : syncStatus === 'synced'
+      ? CheckCircle
+      : CloudArrowUp
+  const syncLabel = syncStatus === 'offline'
+    ? pendingCount > 0 ? `Offline · ${pendingCount} queued` : 'Offline mode'
+    : syncStatus === 'syncing'
+      ? `Syncing${pendingCount > 0 ? ` ${pendingCount}` : ''}…`
+      : syncStatus === 'pending'
+        ? `${pendingCount} waiting to sync`
+        : 'All changes synced'
 
   return (
     <div className="dashboard-shell">
@@ -197,7 +301,7 @@ function Dashboard({ session }: { session: Session }) {
       </aside>
 
       <main className="dashboard-main" id="overview">
-        <header className="dashboard-header"><div><p className="eyebrow">Personal finance dashboard</p><h1>Your worth, in motion.</h1><p>Latest asset snapshot: {formatMonth(activePeriod)}</p></div><button className="outline-button" type="button" onClick={() => fileInput.current?.click()} disabled={saving}><FileArrowUp aria-hidden="true" />Import history</button><input ref={fileInput} className="sr-only" type="file" accept="application/json,.json" onChange={handleImport} /></header>
+        <header className="dashboard-header"><div><p className="eyebrow">Personal finance dashboard</p><h1>Your worth, in motion.</h1><p>Latest asset snapshot: {formatMonth(activePeriod)}</p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span><button className="outline-button" type="button" onClick={() => fileInput.current?.click()} disabled={saving}><FileArrowUp aria-hidden="true" />Import history</button><input ref={fileInput} className="sr-only" type="file" accept="application/json,.json" onChange={handleImport} /></div></header>
 
         {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>Database setup required</strong><p>{loadError.includes('schema cache') ? 'Run the included Supabase migration before adding or importing records.' : loadError}</p><code>supabase/migrations/20260816000000_initial_worthdelta.sql</code></div></section>}
         {notice && <p className="notice" role="status">{notice}</p>}

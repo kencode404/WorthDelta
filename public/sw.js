@@ -1,4 +1,4 @@
-const CACHE_NAME = 'worthdelta-v1'
+const CACHE_NAME = 'worthdelta-v2'
 const APP_SHELL = [
   '/WorthDelta/',
   '/WorthDelta/manifest.webmanifest',
@@ -8,10 +8,24 @@ const APP_SHELL = [
   '/WorthDelta/icons/apple-touch-icon.png',
 ]
 
+async function cacheAppShell() {
+  const cache = await caches.open(CACHE_NAME)
+  await cache.addAll(APP_SHELL)
+
+  const pageResponse = await fetch('/WorthDelta/', { cache: 'reload' })
+  const html = await pageResponse.clone().text()
+  await cache.put('/WorthDelta/', pageResponse)
+
+  const assetUrls = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
+    .map((match) => new URL(match[1], self.location.origin))
+    .filter((url) => url.origin === self.location.origin && url.pathname.startsWith('/WorthDelta/'))
+    .map((url) => url.href)
+
+  await cache.addAll([...new Set(assetUrls)])
+}
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
-  )
+  event.waitUntil(cacheAppShell())
   self.skipWaiting()
 })
 
