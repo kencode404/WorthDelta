@@ -84,7 +84,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .notice { margin: 0 0 20px; padding: 12px 16px; border: 2px solid #9fd7c4; border-radius: 16px; color: var(--brand-dark); background: var(--brand-soft); font-size: 13px; }
 
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 18px; }
-.metric-grid article, .panel { border: 2px solid #cbd4e4; background: var(--surface); box-shadow: var(--shadow); }
+.metric-grid article, .panel { border: 3px solid var(--panel-border); background: var(--surface); box-shadow: var(--shadow); }
 .metric-grid article { position: relative; padding: 20px; overflow: hidden; border-radius: 22px; }
 .metric-grid article::after { content: ''; position: absolute; width: 64px; height: 64px; top: -32px; right: -25px; border: 2px solid rgba(23, 46, 87, .08); border-radius: 50%; background: rgba(255,255,255,.35); }
 .metric-grid article:nth-child(1) { background: #d7f5e7; }
@@ -122,7 +122,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .section-heading h2 { margin: 0; color: var(--navy); font: 800 27px/1.15 'Baloo 2', sans-serif; letter-spacing: -.02em; }
 .section-heading > p { max-width: 460px; margin: 0; color: var(--muted); font-size: 12px; text-align: right; }
 .year-progress-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.year-card { padding: 22px; border: 2px solid #cbd4e4; border-radius: 24px; background: var(--surface); box-shadow: var(--shadow); }
+.year-card { padding: 22px; border: 3px solid var(--panel-border); border-radius: 24px; background: var(--surface); box-shadow: var(--shadow); }
 .year-card:nth-child(4n+1) { background: #fffefa; }
 .year-card:nth-child(4n+2) { background: #f1f6ff; }
 .year-card:nth-child(4n+3) { background: #f0fbf7; }
