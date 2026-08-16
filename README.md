@@ -11,6 +11,7 @@ Vite, and Supabase.
 - Responsive 12-month asset trend
 - Add/update workflow for future monthly records
 - One-time import of the normalized 2022–2026 Google Sheets history
+- Installable phone PWA with WorthDelta home-screen icons
 
 All app-owned database objects use the `worthdelta_` prefix so this Supabase
 schema can safely host additional applications.

@@ -1,0 +1,46 @@
+{
+  "id": "/WorthDelta/",
+  "name": "WorthDelta",
+  "short_name": "WorthDelta",
+  "description": "See the change. Know your worth.",
+  "start_url": "/WorthDelta/",
+  "scope": "/WorthDelta/",
+  "display": "standalone",
+  "background_color": "#f2f1e9",
+  "theme_color": "#173f35",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icons/worthdelta-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/worthdelta-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/worthdelta-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Open WorthDelta",
+      "short_name": "Dashboard",
+      "url": "/WorthDelta/",
+      "icons": [
+        {
+          "src": "icons/worthdelta-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}
