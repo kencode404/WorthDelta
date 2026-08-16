@@ -232,6 +232,8 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 @media (max-width: 560px) {
   .story-stat { align-items: flex-start; flex-direction: column; }
   .dashboard-header { align-items: stretch; flex-direction: column; }
+  .header-subtitle > span[aria-hidden='true'] { display: none; }
+  .header-subtitle > span:last-child { flex-basis: 100%; }
   .header-actions { align-items: stretch; flex-direction: column; }
   .sync-status { align-self: flex-start; }
   .outline-button { width: 100%; }
