@@ -155,9 +155,9 @@ function AnnualChart({ years }: { years: AnnualSummary[] }) {
   const worthPath = worthPoints.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ')
   const gridLines = [0, .25, .5, .75, 1]
   const barSeries = [
-    { key: 'income' as const, label: 'Income', color: '#4e9b6c' },
-    { key: 'expenses' as const, label: 'Expenses', color: '#d56c6c' },
-    { key: 'investments' as const, label: 'Invested', color: '#5d8fc2' },
+    { key: 'income' as const, label: 'Income', color: '#218a70' },
+    { key: 'expenses' as const, label: 'Expenses', color: '#d85f63' },
+    { key: 'investments' as const, label: 'Invested', color: '#477fc6' },
   ]
 
   return (
@@ -180,8 +180,8 @@ function AnnualChart({ years }: { years: AnnualSummary[] }) {
             return <rect key={series.key} x={x} y={y} width={barWidth} height={padding.top + plotHeight - y} rx="3" fill={series.color}><title>{year.year} {series.label}: {formatCurrency(value)}</title></rect>
           })}<text x={center} y={height - 22} textAnchor="middle" className="annual-year-label">{year.year}</text></g>
         })}
-        <path d={worthPath} fill="none" stroke="#20352c" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-        {worthPoints.map((point) => <circle key={point.year.year} cx={point.x} cy={point.y} r="6" fill="#fff" stroke="#20352c" strokeWidth="4"><title>{point.year.year} net worth: {formatCurrency(point.year.netWorth)}</title></circle>)}
+        <path d={worthPath} fill="none" stroke="#172e57" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+        {worthPoints.map((point) => <circle key={point.year.year} cx={point.x} cy={point.y} r="7" fill="#fffefa" stroke="#172e57" strokeWidth="4"><title>{point.year.year} net worth: {formatCurrency(point.year.netWorth)}</title></circle>)}
       </svg>
     </div>
   )
@@ -489,13 +489,13 @@ function Dashboard({ session }: { session: Session }) {
     <div className="dashboard-shell">
       <aside className="sidebar">
         <a className="brand brand-light" href="#overview" aria-label="WorthDelta overview"><span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span><span>WorthDelta</span></a>
-        <nav aria-label="Dashboard"><a className={`nav-item ${view === 'overview' ? 'active' : ''}`} href="#overview"><ChartLineUp aria-hidden="true" />Overview</a><a className={`nav-item ${view === 'records' ? 'active' : ''}`} href="#records"><Receipt aria-hidden="true" />Records</a></nav>
+        <nav aria-label="Dashboard"><a className={`nav-item ${view === 'overview' ? 'active' : ''}`} href="#overview"><ChartLineUp weight="duotone" aria-hidden="true" />Overview</a><a className={`nav-item ${view === 'records' ? 'active' : ''}`} href="#records"><Receipt weight="duotone" aria-hidden="true" />Records</a></nav>
         <div className="sidebar-user"><span className="avatar">{(session.user.email?.[0] ?? 'W').toUpperCase()}</span><span><strong>{session.user.user_metadata.full_name ?? 'WorthDelta user'}</strong><small>{session.user.email}</small></span><button type="button" onClick={() => void supabase.auth.signOut()} aria-label="Sign out"><SignOut aria-hidden="true" /></button></div>
       </aside>
 
       <main className="dashboard-main">
         <div className="mobile-tabs" aria-label="Dashboard views"><a className={view === 'overview' ? 'active' : ''} href="#overview">Overview</a><a className={view === 'records' ? 'active' : ''} href="#records">Records</a></div>
-        <header className="dashboard-header"><div><p className="eyebrow">{view === 'overview' ? 'Personal finance dashboard' : 'Traceable finance history'}</p><h1>{view === 'overview' ? 'Every year, in view.' : 'Every amount, traceable.'}</h1><p>{view === 'overview' ? `Latest asset snapshot: ${formatMonth(activePeriod)}` : `${entries.length.toLocaleString()} detailed records across ${categories.length.toLocaleString()} categories`}</p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span>{view === 'records' && <button className="outline-button" type="button" onClick={() => fileInput.current?.click()} disabled={saving}><FileArrowUp aria-hidden="true" />Import history</button>}<input ref={fileInput} className="sr-only" type="file" accept="application/json,.json" onChange={handleImport} /></div></header>
+        <header className="dashboard-header"><div><h1>{view === 'overview' ? 'Personal finance dashboard' : 'Traceable finance history'}</h1><p className="header-subtitle"><strong>{view === 'overview' ? 'Every year, in view.' : 'Every amount, traceable.'}</strong><span aria-hidden="true">·</span><span>{view === 'overview' ? `Latest asset snapshot: ${formatMonth(activePeriod)}` : `${entries.length.toLocaleString()} records across ${categories.length.toLocaleString()} categories`}</span></p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span>{view === 'records' && <button className="outline-button" type="button" onClick={() => fileInput.current?.click()} disabled={saving}><FileArrowUp aria-hidden="true" />Import history</button>}<input ref={fileInput} className="sr-only" type="file" accept="application/json,.json" onChange={handleImport} /></div></header>
 
         {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>{databaseSetupRequired ? 'Database setup required' : 'Sync paused'}</strong><p>{databaseSetupRequired ? 'Run the included traceable-ledger migration before adding or importing detailed entries.' : `${loadError} Your locally saved changes are safe and will retry automatically.`}</p>{databaseSetupRequired && <code>supabase/migrations/20260816030000_traceable_ledger.sql</code>}</div></section>}
         {notice && <p className="notice" role="status">{notice}</p>}
