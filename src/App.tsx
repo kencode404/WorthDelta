@@ -52,6 +52,7 @@ const formatEntryDate = (date: string) =>
   )
 
 const HUB_URL = 'https://kencode404.github.io/K-Super-Hub/'
+const isLocalPreview = ['localhost', '127.0.0.1'].includes(window.location.hostname)
 type SyncStatus = 'offline' | 'syncing' | 'pending' | 'synced'
 type DashboardView = 'overview' | 'records'
 
@@ -80,6 +81,7 @@ const messageFrom = (error: unknown) => {
 
 function HubRedirect() {
   useEffect(() => {
+    if (isLocalPreview) return
     const destination = new URL(HUB_URL)
     destination.searchParams.set(
       'next',
@@ -88,10 +90,50 @@ function HubRedirect() {
     window.location.replace(destination.href)
   }, [])
 
+  if (isLocalPreview) return <LocalAuth />
+
   return (
     <main className="boot-screen">
       <span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
       <SpinnerGap className="spin" aria-label="Opening K-Super Hub" />
+    </main>
+  )
+}
+
+function LocalAuth() {
+  const [signingIn, setSigningIn] = useState(false)
+  const [authError, setAuthError] = useState('')
+
+  async function handleGoogleSignIn() {
+    setSigningIn(true)
+    setAuthError('')
+
+    const redirectTo = `${window.location.origin}${import.meta.env.BASE_URL}`
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo },
+    })
+
+    if (error) {
+      setAuthError(messageFrom(error))
+      setSigningIn(false)
+    }
+  }
+
+  return (
+    <main className="local-auth-layout">
+      <section className="local-auth-card" aria-labelledby="local-auth-title">
+        <span className="brand-mark app-icon-mark local-auth-icon" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
+        <p className="eyebrow">Local preview</p>
+        <h1 id="local-auth-title">Open your WorthDelta data</h1>
+        <p>Sign in with the same Google account you use on K-Super Hub. This development login returns only to this local test site.</p>
+        {authError && <p className="form-alert error" role="alert">{authError}</p>}
+        <button className="google-button local-google-button" type="button" onClick={() => void handleGoogleSignIn()} disabled={signingIn}>
+          {signingIn ? <SpinnerGap className="spin" aria-hidden="true" /> : null}
+          {signingIn ? 'Opening Google…' : 'Continue with Google'}
+        </button>
+        <small>Production login remains connected to K-Super Hub.</small>
+      </section>
     </main>
   )
 }

@@ -45,8 +45,19 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .auth-switch { margin: 24px 0 0; color: var(--muted); text-align: center; font-size: 14px; }
 .auth-switch button { padding: 0; border: 0; color: var(--brand); background: transparent; font-weight: 700; }
 
+.local-auth-layout { display: grid; min-height: 100svh; place-items: center; padding: 24px; background: #f0fbf3; }
+.local-auth-card { width: min(100%, 470px); padding: clamp(28px, 5vw, 46px); border: 3px solid #68af87; border-radius: 28px; background: #fff; box-shadow: 0 8px 0 rgba(34,139,34,.22), 0 22px 44px rgba(23,46,87,.1); text-align: center; }
+.local-auth-icon { width: 72px; height: 72px; margin: 0 auto 22px; border: 2px solid #68af87; border-radius: 22px; box-shadow: 0 5px 0 rgba(34,139,34,.2); }
+.local-auth-card h1 { margin: 0; color: var(--navy); font: 800 clamp(32px, 7vw, 44px)/1.03 'Baloo 2', sans-serif; letter-spacing: -.035em; text-wrap: balance; }
+.local-auth-card > p:not(.eyebrow, .form-alert) { margin: 16px auto 24px; color: var(--muted); line-height: 1.6; }
+.local-auth-card .form-alert { margin: 0 0 16px; text-align: left; }
+.local-google-button { border: 2px solid #126312; color: #fff; background: var(--brand); box-shadow: 0 4px 0 #126312; }
+.local-google-button:hover { border-color: #0d4f13; background: #197719; }
+.local-google-button svg { width: 20px; height: 20px; }
+.local-auth-card > small { display: block; margin-top: 18px; color: var(--muted); font-size: 11px; }
+
 .dashboard-shell { min-height: 100svh; background: #fff; }
-.sidebar { --sidebar-text-outline: -.65px -.65px 0 rgba(255,255,255,.78), .65px -.65px 0 rgba(255,255,255,.78), -.65px .65px 0 rgba(255,255,255,.78), .65px .65px 0 rgba(255,255,255,.78); position: fixed; inset: 0 auto 0 0; z-index: 20; display: flex; flex-direction: column; width: 280px; padding: 30px 22px 22px; overflow: hidden; color: #071f0d; background: #228b22; border-right: 2px solid #146b17; }
+.sidebar { --sidebar-text-outline: -.65px -.65px 0 rgba(255,255,255,.78), .65px -.65px 0 rgba(255,255,255,.78), -.65px .65px 0 rgba(255,255,255,.78), .65px .65px 0 rgba(255,255,255,.78); position: fixed; inset: 0 auto 0 0; z-index: 20; display: flex; flex-direction: column; width: 280px; padding: 30px 22px 22px; overflow: hidden; color: #071f0d; background: #228b22; border-right: 4px solid #146b17; }
 .sidebar::before, .sidebar::after { content: ''; position: absolute; z-index: -1; border-radius: 50%; background: rgba(255, 255, 255, .1); }
 .sidebar::before { width: 220px; height: 220px; top: -90px; right: -100px; }
 .sidebar::after { width: 150px; height: 150px; bottom: 80px; left: -95px; }
@@ -213,7 +224,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .story-copy { margin: 70px 0 40px; }
   .story-copy h1 { font-size: clamp(44px, 12vw, 66px); }
   .auth-panel { padding: 52px 24px; }
-  .sidebar { position: static; flex-direction: row; align-items: center; justify-content: space-between; width: 100%; height: 70px; padding: 0 18px; }
+  .sidebar { position: static; flex-direction: row; align-items: center; justify-content: space-between; width: 100%; height: 70px; padding: 0 18px; border-right: 0; border-bottom: 4px solid #146b17; }
   .sidebar > .brand { gap: 10px; font-size: 18px; }
   .sidebar > .brand .brand-mark { width: 38px; height: 38px; border-radius: 12px; }
   .sidebar nav { display: none; }
