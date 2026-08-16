@@ -7,9 +7,9 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --brand: #1f9b73;
-  --brand-dark: #0d684d;
-  --brand-soft: #d9f7e9;
+  --brand: #228b22;
+  --brand-dark: #126312;
+  --brand-soft: #e4f5e4;
   --navy: #172e57;
   --navy-dark: #0d1d39;
   --ink: #14233f;
@@ -20,8 +20,8 @@
   --sky: #dce9ff;
   --danger: #9f3f4b;
   --danger-soft: #ffe7e5;
-  --success: #116853;
-  --success-soft: #dff8ee;
+  --success: #166a20;
+  --success-soft: #e3f6e5;
   --shadow: 0 8px 0 rgba(23, 46, 87, .08), 0 20px 42px rgba(23, 46, 87, .08);
 }
 
