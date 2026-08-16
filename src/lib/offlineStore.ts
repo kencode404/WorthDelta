@@ -528,26 +528,47 @@ export async function syncPendingChanges(userId: string) {
   return recordMutations.length + entryMutations.length
 }
 
-export async function refreshRemoteSnapshot(userId: string) {
-  const [categoryResult, recordResult, entryResult] = await Promise.all([
-    supabase.from('worthdelta_financial_categories').select('*').order('sort_order'),
-    supabase
+async function fetchAllMonthlyRecords() {
+  const rows: MonthlyRecord[] = []
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
       .from('worthdelta_monthly_records')
       .select('*, financial_categories:worthdelta_financial_categories(name, category_type)')
-      .order('period', { ascending: false }),
-    supabase
+      .order('period', { ascending: false })
+      .range(from, from + 999)
+    if (error) throw error
+    rows.push(...(data as unknown as MonthlyRecord[]))
+    if (data.length < 1000) return rows
+  }
+}
+
+async function fetchAllLedgerEntries() {
+  const rows: LedgerEntry[] = []
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
       .from('worthdelta_ledger_entries')
       .select('*, financial_categories:worthdelta_financial_categories(name, category_type)')
       .order('entry_date', { ascending: false })
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .range(from, from + 999)
+    if (error) throw error
+    rows.push(...(data as unknown as LedgerEntry[]))
+    if (data.length < 1000) return rows
+  }
+}
+
+export async function refreshRemoteSnapshot(userId: string) {
+  const [categoryResult, remoteRecords, remoteEntries] = await Promise.all([
+    supabase.from('worthdelta_financial_categories').select('*').order('sort_order'),
+    fetchAllMonthlyRecords(),
+    fetchAllLedgerEntries(),
   ])
-  const error = categoryResult.error ?? recordResult.error ?? entryResult.error
-  if (error) throw error
+  if (categoryResult.error) throw categoryResult.error
   const snapshot: OfflineSnapshot = {
     user_id: userId,
     categories: categoryResult.data as FinancialCategory[],
-    records: recordResult.data as unknown as MonthlyRecord[],
-    entries: entryResult.data as unknown as LedgerEntry[],
+    records: remoteRecords,
+    entries: remoteEntries,
     updated_at: Date.now(),
   }
   const [remainingRecords, remainingEntries] = await Promise.all([
