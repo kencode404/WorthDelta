@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
   CheckCircle,
   ChartLineUp,
   CloudArrowUp,
   Database,
-  FileArrowUp,
   MagnifyingGlass,
   Plus,
   Receipt,
@@ -16,12 +15,10 @@ import {
   Wallet,
   WifiSlash,
 } from '@phosphor-icons/react'
-import { readHistoryFile } from './lib/historyImport'
 import {
   getOfflineSnapshot,
   getPendingChangeCount,
   isNetworkError,
-  queueHistoryImport,
   queueLedgerEntry,
   refreshRemoteSnapshot,
   syncPendingChanges,
@@ -224,7 +221,6 @@ function Dashboard({ session }: { session: Session }) {
   const [visibleEntries, setVisibleEntries] = useState(50)
   const [chartType, setChartType] = useState<CategoryType>('asset')
   const [chartCategory, setChartCategory] = useState('')
-  const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -418,45 +414,6 @@ function Dashboard({ session }: { session: Session }) {
     }
   }
 
-  async function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setSaving(true)
-    setNotice('Saving your history on this device…')
-    try {
-      const payload = await readHistoryFile(file)
-      const result = await queueHistoryImport(payload, session.user.id)
-      showSnapshot(result.snapshot)
-      setPendingCount(result.pendingCount)
-
-      if (navigator.onLine) {
-        setSyncStatus('syncing')
-        setNotice('History saved locally. Syncing it now…')
-        await syncPendingChanges(session.user.id)
-        const remote = await refreshRemoteSnapshot(session.user.id)
-        showSnapshot(remote.snapshot)
-        setPendingCount(remote.pendingCount)
-        setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
-        setNotice(`Imported and synced ${result.entries.toLocaleString()} traceable entries and ${result.records.toLocaleString()} monthly summaries across ${result.categories} categories.`)
-      } else {
-        setSyncStatus('offline')
-        setNotice(`Imported ${result.entries.toLocaleString()} traceable entries on this device. They will sync when you reconnect.`)
-      }
-    } catch (importError) {
-      const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
-      setPendingCount(queued)
-      if (queued > 0) {
-        setSyncStatus(navigator.onLine ? 'pending' : 'offline')
-        setNotice('History is safe on this device. Sync will retry automatically.')
-      } else {
-        setNotice(importError instanceof Error ? importError.message : 'Import failed.')
-      }
-    } finally {
-      setSaving(false)
-      event.target.value = ''
-    }
-  }
-
   const filteredCategories = categories.filter((category) => category.category_type === type)
   const ledgerMonths = [...new Set(entries.map((entry) => entry.period.slice(0, 7)))].sort().reverse()
   const filteredEntries = entries.filter((entry) => {
@@ -495,7 +452,7 @@ function Dashboard({ session }: { session: Session }) {
 
       <main className="dashboard-main">
         <div className="mobile-tabs" aria-label="Dashboard views"><a className={view === 'overview' ? 'active' : ''} href="#overview">Overview</a><a className={view === 'records' ? 'active' : ''} href="#records">Records</a></div>
-        <header className="dashboard-header"><div><h1>{view === 'overview' ? 'Personal finance dashboard' : 'Traceable finance history'}</h1><p className="header-subtitle"><strong>{view === 'overview' ? 'Every year, in view.' : 'Every amount, traceable.'}</strong><span aria-hidden="true">·</span><span>{view === 'overview' ? `Latest asset snapshot: ${formatMonth(activePeriod)}` : `${entries.length.toLocaleString()} records across ${categories.length.toLocaleString()} categories`}</span></p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span>{view === 'records' && <button className="outline-button" type="button" onClick={() => fileInput.current?.click()} disabled={saving}><FileArrowUp aria-hidden="true" />Import history</button>}<input ref={fileInput} className="sr-only" type="file" accept="application/json,.json" onChange={handleImport} /></div></header>
+        <header className="dashboard-header"><div><h1>{view === 'overview' ? 'Personal finance dashboard' : 'Traceable finance history'}</h1><p className="header-subtitle"><strong>{view === 'overview' ? 'Every year, in view.' : 'Every amount, traceable.'}</strong><span aria-hidden="true">·</span><span>{view === 'overview' ? `Latest asset snapshot: ${formatMonth(activePeriod)}` : `${entries.length.toLocaleString()} records across ${categories.length.toLocaleString()} categories`}</span></p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span></div></header>
 
         {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>{databaseSetupRequired ? 'Database setup required' : 'Sync paused'}</strong><p>{databaseSetupRequired ? 'Run the included traceable-ledger migration before adding or importing detailed entries.' : `${loadError} Your locally saved changes are safe and will retry automatically.`}</p>{databaseSetupRequired && <code>supabase/migrations/20260816030000_traceable_ledger.sql</code>}</div></section>}
         {notice && <p className="notice" role="status">{notice}</p>}

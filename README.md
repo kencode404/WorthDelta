@@ -12,7 +12,7 @@ Vite, and Supabase.
 - Separate Records view for category analysis, future entries, and the full audit trail
 - Selectable full-history chart for every asset, income, expense, and investment category
 - Add-entry workflow for future traceable records
-- Idempotent import of the normalized 2022–2026 Google Sheets history, including exact source cells and formulas
+- Normalized 2022–2026 Google Sheets history with exact source cells and formulas
 - Installable phone PWA with WorthDelta home-screen icons
 - Offline-first IndexedDB cache with automatic Supabase synchronization
 
@@ -28,25 +28,13 @@ npm run dev
 
 The app reads its Supabase connection from `.env.local`.
 
-## Import the prepared history
-
-1. Register and sign in to WorthDelta.
-2. Select **Import history** in the dashboard.
-3. Choose `data/worthdelta-history-detailed.json`.
-
-The import is idempotent: importing the file again updates the same monthly
-summaries and source-linked ledger entries instead of duplicating them. Each
-imported entry retains the Google Sheet tab, exact cell, original formula, and
-formula-component index. The JSON is ignored by Git and is never bundled into
-the frontend.
-
 ## Offline use
 
 After the first signed-in visit, WorthDelta can open without a network
-connection. Dashboard data is cached per user in IndexedDB. Manual entries and
-history imports made offline are stored in a durable queue and synchronized with
-Supabase when the browser reconnects. Monthly summaries are updated alongside
-their detailed entries.
+connection. Dashboard data is cached per user in IndexedDB. Manual entries made
+offline are stored in a durable queue and synchronized with Supabase when the
+browser reconnects. Monthly summaries are updated alongside their detailed
+entries.
 
 ## Shared authentication
 

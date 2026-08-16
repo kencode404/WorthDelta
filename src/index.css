@@ -3,28 +3,26 @@
 :root {
   font-family: 'Nunito', system-ui, sans-serif;
   color: #14233f;
-  background: #f7f5ee;
+  background: #081710;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --brand: #16846b;
-  --brand-dark: #0f5f51;
-  --brand-soft: #dff8ee;
+  --brand: #1f9b73;
+  --brand-dark: #0d684d;
+  --brand-soft: #d9f7e9;
   --navy: #172e57;
   --navy-dark: #0d1d39;
   --ink: #14233f;
   --muted: #5f6e82;
-  --surface: #fffefa;
-  --canvas: #f7f5ee;
+  --surface: #fbfff9;
+  --canvas: #081710;
   --line: #d9dfeb;
-  --peach: #ffe0d2;
   --sky: #dce9ff;
-  --sun: #ffedab;
   --danger: #9f3f4b;
   --danger-soft: #ffe7e5;
   --success: #116853;
   --success-soft: #dff8ee;
-  --shadow: 0 8px 0 rgba(23, 46, 87, .08), 0 20px 42px rgba(23, 46, 87, .08);
+  --shadow: 0 8px 0 rgba(0, 0, 0, .22), 0 20px 42px rgba(0, 0, 0, .16);
 }
 
 * { box-sizing: border-box; }

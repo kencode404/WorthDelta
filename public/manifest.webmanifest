@@ -6,8 +6,8 @@
   "start_url": "/WorthDelta/",
   "scope": "/WorthDelta/",
   "display": "standalone",
-  "background_color": "#f7f5ee",
-  "theme_color": "#172e57",
+  "background_color": "#081710",
+  "theme_color": "#081710",
   "orientation": "portrait-primary",
   "icons": [
     {
