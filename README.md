@@ -5,8 +5,7 @@ Vite, and Supabase.
 
 ## Included
 
-- Email registration and sign-in
-- Google OAuth client flow
+- Shared email and Google authentication through K-Super Hub
 - Private per-user categories and monthly records with row-level security
 - Asset, income, expense, and investment summaries
 - Responsive 12-month asset trend
@@ -35,11 +34,12 @@ The import is idempotent: importing the file again updates the same monthly
 category records instead of duplicating them. The JSON is ignored by Git and is
 never bundled into the frontend.
 
-## Google sign-in setup
+## Shared authentication
 
-The client flow is implemented. To activate it, enable the Google provider in
-Supabase Authentication and provide a Google OAuth client ID and secret. Add the
-deployed app URL and the local development URL to the allowed redirect URLs.
+Signed-out visitors are redirected to
+[`K-Super-Hub`](https://github.com/kencode404/K-Super-Hub) with a validated
+return path. Both apps use the same Supabase project and GitHub Pages origin, so
+the authenticated browser session is available when the user returns.
 
 ## Checks
 
