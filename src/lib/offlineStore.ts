@@ -94,6 +94,7 @@ interface QueueCategoryInput {
 }
 
 interface QueueEntryInput extends QueueRecordInput {
+  entryId?: string
   entryDate: string
   description: string
   sourceType?: 'manual' | 'google_sheets'
@@ -338,7 +339,7 @@ function createEntryMutation(snapshot: OfflineSnapshot, input: QueueEntryInput):
   const category = snapshot.categories.find(
     (item) => categoryKey(item.category_type, item.name) === categoryKey(input.categoryType, name),
   )
-  const id = crypto.randomUUID()
+  const id = input.entryId ?? crypto.randomUUID()
   const externalKey = input.externalKey ?? null
   return {
     queue_id: externalKey ? `${input.userId}|${externalKey}` : id,
@@ -487,6 +488,10 @@ export async function queueCategory(input: QueueCategoryInput) {
 
 export async function queueLedgerEntry(input: QueueEntryInput) {
   const snapshot = (await getOfflineSnapshot(input.userId)) ?? emptySnapshot(input.userId)
+  const existingEntry = input.entryId
+    ? snapshot.entries.find((entry) => entry.id === input.entryId)
+    : undefined
+  if (input.entryId && !existingEntry) throw new Error('This entry is no longer available to edit.')
   const existingMonthly = snapshot.records.find((record) =>
     record.period === input.period &&
     record.financial_categories?.category_type === input.categoryType &&
@@ -495,7 +500,7 @@ export async function queueLedgerEntry(input: QueueEntryInput) {
   const entryMutation = createEntryMutation(snapshot, input)
   const recordMutation = createRecordMutation(snapshot, {
     ...input,
-    amount: Number(existingMonthly?.amount ?? 0) + input.amount,
+    amount: Number(existingMonthly?.amount ?? 0) + input.amount - Number(existingEntry?.amount ?? 0),
     source: 'ledger',
   })
   applyEntryMutation(snapshot, entryMutation)
