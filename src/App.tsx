@@ -93,7 +93,22 @@ interface CategoryBreakdown {
   expenseGroupId: string | null
 }
 
+interface DonutGroupBreakdown {
+  id: string
+  name: string
+  amount: number
+  percentage: number
+  color: string
+}
+
 const chartColors = ['#228b22', '#2f6e9e', '#c46a3a', '#8064a2', '#c24d57', '#b08720', '#41827a', '#667085']
+const expenseGroupColors = ['#2f6e9e', '#d06b34', '#8064a2', '#687386']
+const expenseCategoryPalettes = [
+  ['#245f96', '#3477ad', '#4a8fc3', '#62a5d1', '#7bb9dc', '#98cbe5'],
+  ['#ad4f32', '#c26039', '#d47548', '#df8d61', '#e8a57c', '#efbd9d'],
+  ['#66518c', '#7b65a0', '#907ab3', '#a590c4', '#b9a8d3', '#cbbde0'],
+  ['#566171', '#687486', '#7b8798', '#909bab', '#a5afbc', '#bbc3cd'],
+]
 const monthOptions = Array.from({ length: 12 }, (_, index) => {
   const value = String(index + 1).padStart(2, '0')
   return {
@@ -172,49 +187,95 @@ function LocalAuth() {
   )
 }
 
-function DonutChart({ label, total, categories }: { label: string; total: number; categories: CategoryBreakdown[] }) {
-  const [activeCategory, setActiveCategory] = useState<string | null>(null)
-  const active = categories.find((category) => category.id === activeCategory)
-  let offset = 0
+function DonutChart({
+  label,
+  total,
+  categories,
+  groups = [],
+}: {
+  label: string
+  total: number
+  categories: CategoryBreakdown[]
+  groups?: DonutGroupBreakdown[]
+}) {
+  const [activeKey, setActiveKey] = useState<string | null>(null)
+  const activeCategory = categories.find((category) => activeKey === `category:${category.id}`)
+  const activeGroup = groups.find((group) => activeKey === `group:${group.id}`)
+  const active = activeCategory ?? activeGroup
+  const hasGroups = groups.length > 0
+  let categoryOffset = 0
+  let groupOffset = 0
 
   return (
-    <div className="donut-wrap">
-      <svg className="donut-chart" viewBox="0 0 120 120" role="img" aria-label={`${label} category proportions. Total ${formatCurrency(total)}.`}>
-        <circle className="donut-track" cx="60" cy="60" r="43" pathLength="100" />
-        {categories.filter((category) => category.amount > 0).map((category) => {
-          const dashOffset = -offset
-          offset += category.percentage
-          return <circle
-            className="donut-slice"
-            key={category.id}
-            cx="60"
-            cy="60"
-            r="43"
-            pathLength="100"
-            fill="none"
-            stroke={category.color}
-            strokeDasharray={`${category.percentage} ${100 - category.percentage}`}
-            strokeDashoffset={dashOffset}
-            role="button"
-            tabIndex={0}
-            aria-label={`${category.name}: ${formatCurrency(category.amount)}, ${Math.round(category.percentage)} percent`}
-            onMouseEnter={() => setActiveCategory(category.id)}
-            onMouseLeave={() => setActiveCategory(null)}
-            onFocus={() => setActiveCategory(category.id)}
-            onBlur={() => setActiveCategory(null)}
-            onPointerDown={(event) => {
-              if (event.pointerType !== 'mouse') {
-                setActiveCategory((current) => current === category.id ? null : category.id)
-              }
-            }}
-          ><title>{category.name}: {formatCurrency(category.amount)} ({Math.round(category.percentage)}%)</title></circle>
-        })}
-      </svg>
-      <div className="donut-center" aria-hidden="true">
-        <small>{active?.name ?? 'Total'}</small>
-        <strong>{formatCurrency(active?.amount ?? total)}</strong>
-        {active && <span>{Math.round(active.percentage)}%</span>}
+    <div className={`donut-wrap ${hasGroups ? 'has-groups' : ''}`}>
+      <div className="donut-canvas">
+        <svg className="donut-chart" viewBox="0 0 120 120" role="img" aria-label={`${label} category proportions${hasGroups ? ' with main expense groups' : ''}. Total ${formatCurrency(total)}.`}>
+          <circle className={`donut-track ${hasGroups ? 'donut-category-track' : ''}`} cx="60" cy="60" r={hasGroups ? 46 : 43} pathLength="100" />
+          {categories.filter((category) => category.amount > 0).map((category) => {
+            const dashOffset = -categoryOffset
+            const key = `category:${category.id}`
+            categoryOffset += category.percentage
+            return <circle
+              className={`donut-slice ${hasGroups ? 'donut-category-slice' : ''}`}
+              key={category.id}
+              cx="60"
+              cy="60"
+              r={hasGroups ? 46 : 43}
+              pathLength="100"
+              fill="none"
+              stroke={category.color}
+              strokeDasharray={`${category.percentage} ${100 - category.percentage}`}
+              strokeDashoffset={dashOffset}
+              role="button"
+              tabIndex={0}
+              aria-label={`${category.name}: ${formatCurrency(category.amount)}, ${Math.round(category.percentage)} percent`}
+              onMouseEnter={() => setActiveKey(key)}
+              onMouseLeave={() => setActiveKey(null)}
+              onFocus={() => setActiveKey(key)}
+              onBlur={() => setActiveKey(null)}
+              onPointerDown={(event) => {
+                if (event.pointerType !== 'mouse') setActiveKey((current) => current === key ? null : key)
+              }}
+            ><title>{category.name}: {formatCurrency(category.amount)} ({Math.round(category.percentage)}%)</title></circle>
+          })}
+          {hasGroups && <>
+            <circle className="donut-track donut-group-track" cx="60" cy="60" r="32" pathLength="100" />
+            {groups.filter((group) => group.amount > 0).map((group) => {
+              const dashOffset = -groupOffset
+              const key = `group:${group.id}`
+              groupOffset += group.percentage
+              return <circle
+                className="donut-slice donut-group-slice"
+                key={group.id}
+                cx="60"
+                cy="60"
+                r="32"
+                pathLength="100"
+                fill="none"
+                stroke={group.color}
+                strokeDasharray={`${group.percentage} ${100 - group.percentage}`}
+                strokeDashoffset={dashOffset}
+                role="button"
+                tabIndex={0}
+                aria-label={`${group.name}: ${formatCurrency(group.amount)}, ${Math.round(group.percentage)} percent`}
+                onMouseEnter={() => setActiveKey(key)}
+                onMouseLeave={() => setActiveKey(null)}
+                onFocus={() => setActiveKey(key)}
+                onBlur={() => setActiveKey(null)}
+                onPointerDown={(event) => {
+                  if (event.pointerType !== 'mouse') setActiveKey((current) => current === key ? null : key)
+                }}
+              ><title>{group.name}: {formatCurrency(group.amount)} ({Math.round(group.percentage)}%)</title></circle>
+            })}
+          </>}
+        </svg>
+        <div className="donut-center" aria-hidden="true">
+          <small>{active?.name ?? 'Total'}</small>
+          <strong>{formatCurrency(active?.amount ?? total)}</strong>
+          {active && <span>{Math.round(active.percentage)}%</span>}
+        </div>
       </div>
+      {hasGroups && <div className="donut-group-key" aria-label="Main expense group colours">{groups.map((group) => <span key={group.id}><i style={{ background: group.color }} aria-hidden="true" />{group.name}</span>)}</div>}
     </div>
   )
 }
@@ -241,18 +302,24 @@ function RecordSectionCard({
   </div>
   const groupedExpenses = type === 'expense'
     ? [
-        ...expenseGroups.map((group) => ({
+        ...expenseGroups.map((group, index) => ({
           id: group.id,
           name: group.name,
+          color: expenseGroupColors[index % expenseGroupColors.length],
           categories: categories.filter((category) => category.expenseGroupId === group.id),
         })),
         {
           id: 'ungrouped',
           name: 'Unassigned',
-          categories: categories.filter((category) => !category.expenseGroupId),
+          color: '#687386',
+          categories: categories.filter((category) => !expenseGroups.some((group) => group.id === category.expenseGroupId)),
         },
       ].filter((group) => group.categories.length > 0)
     : []
+  const donutGroups: DonutGroupBreakdown[] = groupedExpenses.map((group) => {
+    const amount = group.categories.reduce((sum, category) => sum + category.amount, 0)
+    return { ...group, amount, percentage: total > 0 ? (amount / total) * 100 : 0 }
+  })
 
   return (
     <article className={`record-section-card ${type}`}>
@@ -261,7 +328,7 @@ function RecordSectionCard({
         <div><p>{meta.label}</p><strong>{formatCurrency(total)}</strong><small>{formatMonth(period)}</small></div>
       </header>
       <div className="record-section-body">
-        <DonutChart label={meta.label} total={total} categories={categories} />
+        <DonutChart label={meta.label} total={total} categories={categories} groups={type === 'expense' ? donutGroups : undefined} />
         {categories.length === 0 ? <div className="category-empty"><p>No {meta.label.toLocaleLowerCase('en')} categories yet.</p><a href="#settings">Add categories in Settings</a></div> : type === 'expense' ? <div className="category-breakdown-list expense-breakdown-list">
           {groupedExpenses.map((group) => <section className="expense-breakdown-group" key={group.id}>
             <header><strong>{group.name}</strong><span>{formatCurrency(group.categories.reduce((sum, category) => sum + category.amount, 0))}</span></header>
@@ -280,26 +347,55 @@ function ExpenseGroupEditor({
 }: {
   group: ExpenseGroup
   saving: boolean
-  onSave: (name: string) => void
+  onSave: (name: string) => Promise<boolean>
 }) {
+  const [open, setOpen] = useState(false)
   const [name, setName] = useState(group.name)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => setName(group.name), [group.name])
+  useEffect(() => {
+    if (!open) return
+    inputRef.current?.focus()
+    inputRef.current?.select()
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [open])
 
   const trimmedName = name.trim()
   const unchanged = trimmedName === group.name
 
-  return <form className="expense-group-edit-row" onSubmit={(event) => {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (!trimmedName || unchanged) return
-    onSave(trimmedName)
-  }}>
-    <label>
-      <span>Group {group.sort_order + 1}</span>
-      <input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required />
-    </label>
-    <button type="submit" disabled={saving || !trimmedName || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle aria-hidden="true" />}Save</button>
-  </form>
+    if (await onSave(trimmedName)) setOpen(false)
+  }
+
+  const editorId = `expense-group-editor-${group.id}`
+  return <div className="category-chip-editor main-group-chip-editor" ref={containerRef}>
+    <button className="main-group-chip" type="button" aria-expanded={open} aria-controls={editorId} onClick={() => {
+      setName(group.name)
+      setOpen((current) => !current)
+    }}><i aria-hidden="true" />{group.name}<small>Tap to rename</small></button>
+    {open && <form className="category-edit-popover main-group-edit-popover" id={editorId} aria-label={`Rename ${group.name} expense group`} onSubmit={(event) => void handleSubmit(event)}>
+      <span className="compact-editor-label">Main expense group</span>
+      <div className="compact-edit-field">
+        <input ref={inputRef} value={name} onChange={(event) => setName(event.target.value)} aria-label={`${group.name} group name`} maxLength={80} required />
+        <button className="compact-save-button" type="submit" aria-label={`Save ${group.name} group`} disabled={saving || !trimmedName || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}</button>
+      </div>
+    </form>}
+  </div>
 }
 
 function CategoryEditor({
@@ -311,39 +407,66 @@ function CategoryEditor({
   category: FinancialCategory
   expenseGroups: ExpenseGroup[]
   saving: boolean
-  onSave: (name: string, expenseGroupId: string | null) => void
+  onSave: (name: string, expenseGroupId: string | null) => Promise<boolean>
 }) {
+  const [open, setOpen] = useState(false)
   const [name, setName] = useState(category.name)
   const [expenseGroupId, setExpenseGroupId] = useState(category.expense_group_id ?? '')
+  const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setName(category.name)
     setExpenseGroupId(category.expense_group_id ?? '')
   }, [category.name, category.expense_group_id])
+  useEffect(() => {
+    if (!open) return
+    inputRef.current?.focus()
+    inputRef.current?.select()
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [open])
 
   const trimmedName = name.trim()
   const nextExpenseGroupId = category.category_type === 'expense' ? expenseGroupId : null
   const unchanged = trimmedName === category.name && nextExpenseGroupId === category.expense_group_id
   const missingExpenseGroup = category.category_type === 'expense' && !expenseGroupId
 
-  return <form className={`category-edit-row ${category.category_type === 'expense' ? 'with-group' : ''}`} onSubmit={(event) => {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (!trimmedName || missingExpenseGroup || unchanged) return
-    onSave(trimmedName, nextExpenseGroupId)
-  }}>
-    <label>
-      <span className="sr-only">Category name: {category.name}</span>
-      <input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required />
-    </label>
-    {category.category_type === 'expense' && <label>
-      <span className="sr-only">Expense group for {category.name}</span>
-      <select value={expenseGroupId} onChange={(event) => setExpenseGroupId(event.target.value)} required>
+    if (await onSave(trimmedName, nextExpenseGroupId)) setOpen(false)
+  }
+
+  const editorId = `category-editor-${category.id}`
+  return <div className={`category-chip-editor ${category.category_type}`} ref={containerRef}>
+    <button className="category-chip" type="button" aria-expanded={open} aria-controls={editorId} title="Tap to edit" onClick={() => {
+      setName(category.name)
+      setExpenseGroupId(category.expense_group_id ?? '')
+      setOpen((current) => !current)
+    }}><i aria-hidden="true" />{category.name}</button>
+    {open && <form className="category-edit-popover" id={editorId} aria-label={`Edit ${category.name}`} onSubmit={(event) => void handleSubmit(event)}>
+      <span className="compact-editor-label">Category name</span>
+      <div className="compact-edit-field">
+        <input ref={inputRef} value={name} onChange={(event) => setName(event.target.value)} aria-label={`Category name: ${category.name}`} maxLength={80} required />
+        <button className="compact-save-button" type="submit" aria-label={`Save ${category.name}`} disabled={saving || !trimmedName || missingExpenseGroup || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}</button>
+      </div>
+      {category.category_type === 'expense' && <label className="compact-group-select"><span>Main group</span><select value={expenseGroupId} onChange={(event) => setExpenseGroupId(event.target.value)} required>
         <option value="" disabled>Choose group</option>
         {expenseGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-      </select>
-    </label>}
-    <button type="submit" disabled={saving || !trimmedName || missingExpenseGroup || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle aria-hidden="true" />}Save</button>
-  </form>
+      </select></label>}
+    </form>}
+  </div>
 }
 
 function AnnualChart({ years }: { years: AnnualSummary[] }) {
@@ -716,22 +839,36 @@ function Dashboard({ session }: { session: Session }) {
         sectionRecords.map((record) => [record.financial_categories?.name.toLocaleLowerCase('en') ?? '', Number(record.amount)]),
       )
       const total = sectionRecords.reduce((sum, record) => sum + Number(record.amount), 0)
+      const expenseGroupOrder = new Map(expenseGroups.map((group, index) => [group.id, index]))
+      const paletteIndexes = new Map<string, number>()
       const breakdown: CategoryBreakdown[] = sectionCategories
         .map((category, index) => {
           const amount = amountByName.get(category.name.toLocaleLowerCase('en')) ?? 0
+          const groupIndex = expenseGroupOrder.get(category.expense_group_id ?? '') ?? expenseGroups.length
+          const paletteKey = category.expense_group_id ?? 'unassigned'
+          const paletteIndex = paletteIndexes.get(paletteKey) ?? 0
+          paletteIndexes.set(paletteKey, paletteIndex + 1)
           return {
             id: category.id,
             name: category.name,
             amount,
             percentage: total > 0 ? (amount / total) * 100 : 0,
-            color: chartColors[index % chartColors.length],
+            color: sectionType === 'expense'
+              ? expenseCategoryPalettes[groupIndex % expenseCategoryPalettes.length][paletteIndex % expenseCategoryPalettes[groupIndex % expenseCategoryPalettes.length].length]
+              : chartColors[index % chartColors.length],
             expenseGroupId: category.expense_group_id,
           }
         })
-        .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name))
+        .sort((a, b) => {
+          if (sectionType === 'expense') {
+            const groupDifference = (expenseGroupOrder.get(a.expenseGroupId ?? '') ?? expenseGroups.length) - (expenseGroupOrder.get(b.expenseGroupId ?? '') ?? expenseGroups.length)
+            if (groupDifference !== 0) return groupDifference
+          }
+          return b.amount - a.amount || a.name.localeCompare(b.name)
+        })
       return { type: sectionType, total, categories: breakdown }
     })
-  }, [categories, records, summaryPeriod])
+  }, [categories, expenseGroups, records, summaryPeriod])
 
   async function handleSave(event: React.FormEvent) {
     event.preventDefault()
@@ -853,10 +990,10 @@ function Dashboard({ session }: { session: Session }) {
 
   async function handleUpdateCategory(category: FinancialCategory, nextName: string, nextExpenseGroupId: string | null) {
     const trimmedName = nextName.trim()
-    if (!trimmedName) return
+    if (!trimmedName) return false
     if (category.category_type === 'expense' && !expenseGroups.some((group) => group.id === nextExpenseGroupId)) {
       setNotice('Choose a valid expense group before saving this category.')
-      return
+      return false
     }
     if (categories.some((item) =>
       item.id !== category.id &&
@@ -864,11 +1001,11 @@ function Dashboard({ session }: { session: Session }) {
       item.name.toLocaleLowerCase('en') === trimmedName.toLocaleLowerCase('en'),
     )) {
       setNotice(`${trimmedName} already exists under ${categoryMeta[category.category_type].label}.`)
-      return
+      return false
     }
     if (!navigator.onLine) {
       setNotice('Reconnect to rename or move an existing category. New categories can still be added offline.')
-      return
+      return false
     }
 
     setCategoryEditSavingId(category.id)
@@ -892,11 +1029,13 @@ function Dashboard({ session }: { session: Session }) {
       setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
       setLoadError('')
       setNotice(`${trimmedName} updated.`)
+      return true
     } catch (error) {
       const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
       setPendingCount(queued)
       setSyncStatus(navigator.onLine ? 'pending' : 'offline')
       setNotice(messageFrom(error))
+      return false
     } finally {
       setCategoryEditSavingId(null)
     }
@@ -904,16 +1043,16 @@ function Dashboard({ session }: { session: Session }) {
 
   async function handleUpdateExpenseGroup(group: ExpenseGroup, nextName: string) {
     const trimmedName = nextName.trim()
-    if (!trimmedName) return
+    if (!trimmedName) return false
     if (expenseGroups.some((item) =>
       item.id !== group.id && item.name.toLocaleLowerCase('en') === trimmedName.toLocaleLowerCase('en'),
     )) {
       setNotice(`An expense group named ${trimmedName} already exists.`)
-      return
+      return false
     }
     if (!navigator.onLine) {
       setNotice('Reconnect to rename a main expense group.')
-      return
+      return false
     }
 
     setExpenseGroupSavingId(group.id)
@@ -934,11 +1073,13 @@ function Dashboard({ session }: { session: Session }) {
       setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
       setLoadError('')
       setNotice(`Expense group renamed to ${trimmedName}.`)
+      return true
     } catch (error) {
       const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
       setPendingCount(queued)
       setSyncStatus(navigator.onLine ? 'pending' : 'offline')
       setNotice(messageFrom(error))
+      return false
     } finally {
       setExpenseGroupSavingId(null)
     }
@@ -1053,15 +1194,8 @@ function Dashboard({ session }: { session: Session }) {
         </section>
         </> : <>
         <section className="panel settings-intro">
-          <div><p className="eyebrow">Category organiser</p><h2>Edit categories and expense groups</h2><p>Rename every category, move expenses between the two main groups, or rename the main groups themselves. New categories are available in the Add entry form immediately.</p></div>
+          <div><p className="eyebrow">Category organiser</p><h2>Tap a category to edit</h2><p>Categories stay compact until selected. Planned and Unplanned now live directly inside Expenses, where you can rename either group or move an expense.</p></div>
           <a className="secondary-button" href="#records"><Receipt aria-hidden="true" />Back to records</a>
-        </section>
-
-        <section className="panel expense-group-settings" aria-labelledby="expense-group-settings-title">
-          <header><div><p className="eyebrow">Main expense categories</p><h2 id="expense-group-settings-title">Planned and unplanned</h2><p>These names appear in your overview, records, and expense entry form.</p></div><span>{expenseGroups.length} groups</span></header>
-          {expenseGroups.length === 0 ? <p className="settings-empty">Run the latest database migration to set up the two expense groups.</p> : <div className="expense-group-editor-list">
-            {expenseGroups.map((group) => <ExpenseGroupEditor key={group.id} group={group} saving={expenseGroupSavingId === group.id} onSave={(name) => void handleUpdateExpenseGroup(group, name)} />)}
-          </div>}
         </section>
 
         <section className="category-settings-grid" aria-label="Financial category settings">
@@ -1069,6 +1203,9 @@ function Dashboard({ session }: { session: Session }) {
             const meta = categoryMeta[categoryType]
             const Icon = meta.icon
             const sectionCategories = categories.filter((category) => category.category_type === categoryType)
+            const unassignedSettingsCategories = categoryType === 'expense'
+              ? sectionCategories.filter((category) => !expenseGroups.some((group) => group.id === category.expense_group_id))
+              : []
             return <article className={`category-settings-card ${categoryType}`} key={categoryType}>
               <header><span className={`record-section-icon ${categoryType}`}><Icon weight="duotone" aria-hidden="true" /></span><div><h2>{meta.label}</h2><p>{sectionCategories.length} {sectionCategories.length === 1 ? 'category' : 'categories'}</p></div></header>
               <form className={`category-add-form ${categoryType === 'expense' ? 'with-group' : ''}`} onSubmit={(event) => void handleAddCategory(event, categoryType)}>
@@ -1076,7 +1213,16 @@ function Dashboard({ session }: { session: Session }) {
                 {categoryType === 'expense' && <label><span className="sr-only">Main group for new expense category</span><select value={newExpenseGroupId} onChange={(event) => setNewExpenseGroupId(event.target.value)} required><option value="" disabled>Choose group</option>{expenseGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>}
                 <button type="submit" disabled={categorySaving !== null || (categoryType === 'expense' && !newExpenseGroupId)}>{categorySaving === categoryType ? <SpinnerGap className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}Add</button>
               </form>
-              {sectionCategories.length === 0 ? <p className="settings-empty">No categories here yet.</p> : <div className="category-edit-list">{sectionCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={expenseGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => void handleUpdateCategory(category, name, expenseGroupId)} />)}</div>}
+              {categoryType === 'expense' ? expenseGroups.length === 0 ? <p className="settings-empty">Expense groups are not available yet.</p> : <div className="expense-settings-groups">
+                {expenseGroups.map((group, groupIndex) => {
+                  const groupCategories = sectionCategories.filter((category) => category.expense_group_id === group.id)
+                  return <section className={`expense-settings-group tone-${groupIndex % 2}`} key={group.id}>
+                    <header><ExpenseGroupEditor group={group} saving={expenseGroupSavingId === group.id} onSave={(name) => handleUpdateExpenseGroup(group, name)} /><span>{groupCategories.length} {groupCategories.length === 1 ? 'category' : 'categories'}</span></header>
+                    {groupCategories.length === 0 ? <p className="expense-group-empty">No categories assigned.</p> : <div className="category-chip-list">{groupCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={expenseGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} />)}</div>}
+                  </section>
+                })}
+                {unassignedSettingsCategories.length > 0 && <section className="expense-settings-group unassigned"><header><strong>Unassigned</strong><span>{unassignedSettingsCategories.length} categories</span></header><div className="category-chip-list">{unassignedSettingsCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={expenseGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} />)}</div></section>}
+              </div> : sectionCategories.length === 0 ? <p className="settings-empty">No categories here yet.</p> : <div className="category-chip-list section-category-chips">{sectionCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={expenseGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} />)}</div>}
             </article>
           })}
         </section>
