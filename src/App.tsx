@@ -6,6 +6,7 @@ import {
   CloudArrowUp,
   Database,
   GearSix,
+  List,
   MagnifyingGlass,
   Plus,
   Receipt,
@@ -384,6 +385,7 @@ function Dashboard({ session }: { session: Session }) {
   const [recordPeriod, setRecordPeriod] = useState(getCurrentMonthPeriod)
   const [entryDialogOpen, setEntryDialogOpen] = useState(false)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [categorySaving, setCategorySaving] = useState<CategoryType | null>(null)
   const [newCategoryNames, setNewCategoryNames] = useState<Record<CategoryType, string>>({
     asset: '',
@@ -394,11 +396,15 @@ function Dashboard({ session }: { session: Session }) {
   const entryDialogRef = useRef<HTMLDialogElement>(null)
   const floatingAddButtonRef = useRef<HTMLButtonElement>(null)
   const firstTypeButtonRef = useRef<HTMLButtonElement>(null)
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const firstNavItemRef = useRef<HTMLAnchorElement>(null)
+  const sidebarRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     const handleHashChange = () => {
       setView(dashboardViewFromHash())
       setAddMenuOpen(false)
+      setMobileNavOpen(false)
       window.scrollTo({ top: 0, behavior: 'auto' })
     }
     if (!['#overview', '#records', '#settings'].includes(window.location.hash)) {
@@ -427,6 +433,37 @@ function Dashboard({ session }: { session: Session }) {
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
   }, [addMenuOpen])
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('mobile-nav-open', mobileNavOpen)
+    if (!mobileNavOpen) return
+
+    firstNavItemRef.current?.focus()
+    const handleDrawerKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileNavOpen(false)
+        mobileMenuButtonRef.current?.focus()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const focusable = [...(sidebarRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') ?? [])]
+      const first = focusable[0]
+      const last = focusable.at(-1)
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last?.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first?.focus()
+      }
+    }
+    window.addEventListener('keydown', handleDrawerKeyDown)
+    return () => {
+      document.documentElement.classList.remove('mobile-nav-open')
+      window.removeEventListener('keydown', handleDrawerKeyDown)
+    }
+  }, [mobileNavOpen])
 
   const showSnapshot = useCallback((snapshot: { categories: FinancialCategory[]; records: MonthlyRecord[]; entries: LedgerEntry[] }) => {
     setCategories(snapshot.categories)
@@ -733,14 +770,21 @@ function Dashboard({ session }: { session: Session }) {
 
   return (
     <div className="dashboard-shell">
-      <aside className="sidebar">
+      <header className="mobile-topbar">
+        <button ref={mobileMenuButtonRef} className="mobile-menu-button" type="button" aria-label="Open navigation menu" aria-controls="dashboard-sidebar" aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen(true)}><List weight="bold" aria-hidden="true" /></button>
         <a className="brand brand-light" href="#overview" aria-label="WorthDelta overview"><span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span><span>WorthDelta</span></a>
-        <nav aria-label="Dashboard"><a className={`nav-item ${view === 'overview' ? 'active' : ''}`} href="#overview"><ChartLineUp weight="duotone" aria-hidden="true" />Overview</a><a className={`nav-item ${view === 'records' ? 'active' : ''}`} href="#records"><Receipt weight="duotone" aria-hidden="true" />Records</a><a className={`nav-item ${view === 'settings' ? 'active' : ''}`} href="#settings"><GearSix weight="duotone" aria-hidden="true" />Settings</a></nav>
+      </header>
+
+      {mobileNavOpen && <button className="mobile-nav-scrim" type="button" aria-label="Close navigation menu" onClick={() => { setMobileNavOpen(false); mobileMenuButtonRef.current?.focus() }} />}
+
+      <aside ref={sidebarRef} id="dashboard-sidebar" className={`sidebar ${mobileNavOpen ? 'mobile-open' : ''}`}>
+        <button className="sidebar-close-button" type="button" aria-label="Close navigation menu" onClick={() => { setMobileNavOpen(false); mobileMenuButtonRef.current?.focus() }}><X weight="bold" aria-hidden="true" /></button>
+        <a className="brand brand-light" href="#overview" aria-label="WorthDelta overview" onClick={() => setMobileNavOpen(false)}><span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span><span>WorthDelta</span></a>
+        <nav aria-label="Dashboard"><a ref={firstNavItemRef} className={`nav-item ${view === 'overview' ? 'active' : ''}`} href="#overview" onClick={() => setMobileNavOpen(false)}><ChartLineUp weight="duotone" aria-hidden="true" />Overview</a><a className={`nav-item ${view === 'records' ? 'active' : ''}`} href="#records" onClick={() => setMobileNavOpen(false)}><Receipt weight="duotone" aria-hidden="true" />Records</a><a className={`nav-item ${view === 'settings' ? 'active' : ''}`} href="#settings" onClick={() => setMobileNavOpen(false)}><GearSix weight="duotone" aria-hidden="true" />Settings</a></nav>
         <div className="sidebar-user"><span className="avatar">{(session.user.email?.[0] ?? 'W').toUpperCase()}</span><span><strong>{session.user.user_metadata.full_name ?? 'WorthDelta user'}</strong><small>{session.user.email}</small></span><button type="button" onClick={() => void supabase.auth.signOut()} aria-label="Sign out"><SignOut aria-hidden="true" /></button></div>
       </aside>
 
       <main className="dashboard-main">
-        <div className="mobile-tabs" aria-label="Dashboard views"><a className={view === 'overview' ? 'active' : ''} href="#overview">Overview</a><a className={view === 'records' ? 'active' : ''} href="#records">Records</a><a className={view === 'settings' ? 'active' : ''} href="#settings">Settings</a></div>
         <header className="dashboard-header"><div><h1>{viewCopy.title}</h1><p className="header-subtitle"><strong>{viewCopy.lead}</strong><span aria-hidden="true">·</span><span>{viewCopy.detail}</span></p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span></div></header>
 
         {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>{databaseSetupRequired ? 'Database setup required' : 'Sync paused'}</strong><p>{databaseSetupRequired ? 'Run the included traceable-ledger migration before adding or importing detailed entries.' : `${loadError} Your locally saved changes are safe and will retry automatically.`}</p>{databaseSetupRequired && <code>supabase/migrations/20260816030000_traceable_ledger.sql</code>}</div></section>}
