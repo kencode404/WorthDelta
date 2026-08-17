@@ -45,6 +45,9 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value)
 
+const formatPercentage = (value: number) =>
+  value.toFixed(value > 0 && value < 1 ? 1 : 0)
+
 const formatMonth = (period: string) =>
   new Intl.DateTimeFormat('en-MY', { month: 'short', year: 'numeric' }).format(
     new Date(`${period.slice(0, 7)}-02T00:00:00`),
@@ -103,12 +106,6 @@ interface DonutGroupBreakdown {
 
 const chartColors = ['#228b22', '#2f6e9e', '#c46a3a', '#8064a2', '#c24d57', '#b08720', '#41827a', '#667085']
 const expenseGroupColors = ['#2f6e9e', '#d06b34', '#8064a2', '#687386']
-const expenseCategoryPalettes = [
-  ['#245f96', '#3477ad', '#4a8fc3', '#62a5d1', '#7bb9dc', '#98cbe5'],
-  ['#ad4f32', '#c26039', '#d47548', '#df8d61', '#e8a57c', '#efbd9d'],
-  ['#66518c', '#7b65a0', '#907ab3', '#a590c4', '#b9a8d3', '#cbbde0'],
-  ['#566171', '#687486', '#7b8798', '#909bab', '#a5afbc', '#bbc3cd'],
-]
 const monthOptions = Array.from({ length: 12 }, (_, index) => {
   const value = String(index + 1).padStart(2, '0')
   return {
@@ -199,32 +196,35 @@ function DonutChart({
   groups?: DonutGroupBreakdown[]
 }) {
   const [activeKey, setActiveKey] = useState<string | null>(null)
-  const activeCategory = categories.find((category) => activeKey === `category:${category.id}`)
-  const activeGroup = groups.find((group) => activeKey === `group:${group.id}`)
-  const active = activeCategory ?? activeGroup
-  const hasGroups = groups.length > 0
+  const active = categories.find((category) => activeKey === category.id)
+  const visibleCategories = categories.filter((category) => category.amount > 0)
+  const hasGroupLegend = groups.length > 0
+  const hasGroupSeparation = new Set(visibleCategories.map((category) => category.expenseGroupId ?? 'ungrouped')).size > 1
   let categoryOffset = 0
-  let groupOffset = 0
 
   return (
-    <div className={`donut-wrap ${hasGroups ? 'has-groups' : ''}`}>
+    <div className="donut-wrap">
       <div className="donut-canvas">
-        <svg className="donut-chart" viewBox="0 0 120 120" role="img" aria-label={`${label} category proportions${hasGroups ? ' with main expense groups' : ''}. Total ${formatCurrency(total)}.`}>
-          <circle className={`donut-track ${hasGroups ? 'donut-category-track' : ''}`} cx="60" cy="60" r={hasGroups ? 46 : 43} pathLength="100" />
-          {categories.filter((category) => category.amount > 0).map((category) => {
+        <svg className="donut-chart" viewBox="0 0 120 120" role="img" aria-label={`${label} category proportions${hasGroupLegend ? '. Main group percentages are listed below' : ''}. Total ${formatCurrency(total)}.`}>
+          <circle className="donut-track" cx="60" cy="60" r="43" pathLength="100" />
+          {visibleCategories.map((category, index) => {
             const dashOffset = -categoryOffset
-            const key = `category:${category.id}`
+            const nextCategory = visibleCategories[(index + 1) % visibleCategories.length]
+            const endsGroup = hasGroupSeparation && category.expenseGroupId !== nextCategory?.expenseGroupId
+            const groupGap = endsGroup ? Math.min(1.2, category.percentage * .25) : 0
+            const visiblePercentage = category.percentage - groupGap
+            const key = category.id
             categoryOffset += category.percentage
             return <circle
-              className={`donut-slice ${hasGroups ? 'donut-category-slice' : ''}`}
+              className="donut-slice"
               key={category.id}
               cx="60"
               cy="60"
-              r={hasGroups ? 46 : 43}
+              r="43"
               pathLength="100"
               fill="none"
               stroke={category.color}
-              strokeDasharray={`${category.percentage} ${100 - category.percentage}`}
+              strokeDasharray={`${visiblePercentage} ${100 - visiblePercentage}`}
               strokeDashoffset={dashOffset}
               role="button"
               tabIndex={0}
@@ -238,36 +238,6 @@ function DonutChart({
               }}
             ><title>{category.name}: {formatCurrency(category.amount)} ({Math.round(category.percentage)}%)</title></circle>
           })}
-          {hasGroups && <>
-            <circle className="donut-track donut-group-track" cx="60" cy="60" r="32" pathLength="100" />
-            {groups.filter((group) => group.amount > 0).map((group) => {
-              const dashOffset = -groupOffset
-              const key = `group:${group.id}`
-              groupOffset += group.percentage
-              return <circle
-                className="donut-slice donut-group-slice"
-                key={group.id}
-                cx="60"
-                cy="60"
-                r="32"
-                pathLength="100"
-                fill="none"
-                stroke={group.color}
-                strokeDasharray={`${group.percentage} ${100 - group.percentage}`}
-                strokeDashoffset={dashOffset}
-                role="button"
-                tabIndex={0}
-                aria-label={`${group.name}: ${formatCurrency(group.amount)}, ${Math.round(group.percentage)} percent`}
-                onMouseEnter={() => setActiveKey(key)}
-                onMouseLeave={() => setActiveKey(null)}
-                onFocus={() => setActiveKey(key)}
-                onBlur={() => setActiveKey(null)}
-                onPointerDown={(event) => {
-                  if (event.pointerType !== 'mouse') setActiveKey((current) => current === key ? null : key)
-                }}
-              ><title>{group.name}: {formatCurrency(group.amount)} ({Math.round(group.percentage)}%)</title></circle>
-            })}
-          </>}
         </svg>
         <div className="donut-center" aria-hidden="true">
           <small>{active?.name ?? 'Total'}</small>
@@ -275,7 +245,7 @@ function DonutChart({
           {active && <span>{Math.round(active.percentage)}%</span>}
         </div>
       </div>
-      {hasGroups && <div className="donut-group-key" aria-label="Main expense group colours">{groups.map((group) => <span key={group.id}><i style={{ background: group.color }} aria-hidden="true" />{group.name}</span>)}</div>}
+      {hasGroupLegend && <div className="donut-group-key" aria-label="Main expense group percentages">{groups.map((group) => <span key={group.id}><i style={{ background: group.color }} aria-hidden="true" /><b>{group.name}</b><strong>{formatPercentage(group.percentage)}%</strong></span>)}</div>}
     </div>
   )
 }
@@ -840,22 +810,15 @@ function Dashboard({ session }: { session: Session }) {
       )
       const total = sectionRecords.reduce((sum, record) => sum + Number(record.amount), 0)
       const expenseGroupOrder = new Map(expenseGroups.map((group, index) => [group.id, index]))
-      const paletteIndexes = new Map<string, number>()
       const breakdown: CategoryBreakdown[] = sectionCategories
         .map((category, index) => {
           const amount = amountByName.get(category.name.toLocaleLowerCase('en')) ?? 0
-          const groupIndex = expenseGroupOrder.get(category.expense_group_id ?? '') ?? expenseGroups.length
-          const paletteKey = category.expense_group_id ?? 'unassigned'
-          const paletteIndex = paletteIndexes.get(paletteKey) ?? 0
-          paletteIndexes.set(paletteKey, paletteIndex + 1)
           return {
             id: category.id,
             name: category.name,
             amount,
             percentage: total > 0 ? (amount / total) * 100 : 0,
-            color: sectionType === 'expense'
-              ? expenseCategoryPalettes[groupIndex % expenseCategoryPalettes.length][paletteIndex % expenseCategoryPalettes[groupIndex % expenseCategoryPalettes.length].length]
-              : chartColors[index % chartColors.length],
+            color: chartColors[index % chartColors.length],
             expenseGroupId: category.expense_group_id,
           }
         })
