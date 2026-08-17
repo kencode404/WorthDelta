@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import type {
   CategoryType,
+  ExpenseGroup,
   FinancialCategory,
   HistoryFile,
   LedgerEntry,
@@ -8,7 +9,7 @@ import type {
 } from '../types'
 
 const DATABASE_NAME = 'worthdelta-offline'
-const DATABASE_VERSION = 3
+const DATABASE_VERSION = 4
 const SNAPSHOT_STORE = 'snapshots'
 const CATEGORY_MUTATION_STORE = 'category-mutations'
 const MUTATION_STORE = 'mutations'
@@ -17,6 +18,7 @@ const SYNC_CHUNK_SIZE = 250
 
 export interface OfflineSnapshot {
   user_id: string
+  expense_groups: ExpenseGroup[]
   categories: FinancialCategory[]
   records: MonthlyRecord[]
   entries: LedgerEntry[]
@@ -29,6 +31,7 @@ interface PendingRecordMutation {
   category_type: CategoryType
   category_name: string
   category_sort_order: number
+  expense_group_id: string | null
   local_category_id: string
   local_record_id: string
   period: string
@@ -44,6 +47,7 @@ interface PendingCategoryMutation {
   category_type: CategoryType
   category_name: string
   category_sort_order: number
+  expense_group_id: string | null
   local_category_id: string
   updated_at: number
 }
@@ -55,6 +59,7 @@ interface PendingEntryMutation {
   category_type: CategoryType
   category_name: string
   category_sort_order: number
+  expense_group_id: string | null
   local_category_id: string
   entry_date: string
   period: string
@@ -73,6 +78,7 @@ interface QueueRecordInput {
   categoryType: CategoryType
   categoryName: string
   categorySortOrder: number
+  expenseGroupId?: string | null
   period: string
   amount: number
   note?: string | null
@@ -84,6 +90,7 @@ interface QueueCategoryInput {
   categoryType: CategoryType
   categoryName: string
   categorySortOrder: number
+  expenseGroupId?: string | null
 }
 
 interface QueueEntryInput extends QueueRecordInput {
@@ -146,11 +153,13 @@ function transactionComplete(transaction: IDBTransaction) {
 }
 
 function emptySnapshot(userId: string): OfflineSnapshot {
-  return { user_id: userId, categories: [], records: [], entries: [], updated_at: Date.now() }
+  return { user_id: userId, expense_groups: [], categories: [], records: [], entries: [], updated_at: Date.now() }
 }
 
 function normalizeSnapshot(snapshot: OfflineSnapshot): OfflineSnapshot {
+  snapshot.expense_groups ??= []
   snapshot.entries ??= []
+  snapshot.categories.forEach((category) => { category.expense_group_id ??= null })
   return snapshot
 }
 
@@ -160,6 +169,26 @@ function normalizedName(name: string) {
 
 function categoryKey(type: CategoryType, name: string) {
   return `${type}|${normalizedName(name)}`
+}
+
+const plannedExpenseNames = new Set([
+  '房租+管理費/家用',
+  '水費',
+  '電費(每單月1次)',
+  '電話費/網絡',
+  '學貸',
+  '貸款（車/房/其他）',
+  '健身房',
+  '訂閱服務',
+  '保費(意外/醫療/車險)',
+  '鋼琴課程',
+].map(normalizedName))
+
+function importedExpenseGroupId(snapshot: OfflineSnapshot, categoryName: string) {
+  const groups = [...snapshot.expense_groups].sort((a, b) => a.sort_order - b.sort_order)
+  return plannedExpenseNames.has(normalizedName(categoryName))
+    ? groups[0]?.id ?? null
+    : groups[1]?.id ?? groups[0]?.id ?? null
 }
 
 function mutationKey(userId: string, type: CategoryType, name: string, period: string) {
@@ -180,7 +209,7 @@ function sortSnapshot(snapshot: OfflineSnapshot) {
 
 function ensureCategory(
   snapshot: OfflineSnapshot,
-  mutation: Pick<PendingCategoryMutation, 'category_type' | 'category_name' | 'category_sort_order' | 'local_category_id' | 'user_id'>,
+  mutation: Pick<PendingCategoryMutation, 'category_type' | 'category_name' | 'category_sort_order' | 'expense_group_id' | 'local_category_id' | 'user_id'>,
 ) {
   const wantedCategoryKey = categoryKey(mutation.category_type, mutation.category_name)
   let category = snapshot.categories.find(
@@ -193,8 +222,11 @@ function ensureCategory(
       category_type: mutation.category_type,
       name: mutation.category_name,
       sort_order: mutation.category_sort_order,
+      expense_group_id: mutation.expense_group_id,
     }
     snapshot.categories.push(category)
+  } else if (category.category_type === 'expense') {
+    category.expense_group_id = mutation.expense_group_id
   }
   return category
 }
@@ -221,7 +253,7 @@ function applyRecordMutation(snapshot: OfflineSnapshot, mutation: PendingRecordM
     amount: mutation.amount,
     note: mutation.note,
     source: mutation.source,
-    financial_categories: { name: category.name, category_type: category.category_type },
+    financial_categories: { name: category.name, category_type: category.category_type, expense_group_id: category.expense_group_id },
   }
   if (existingRecordIndex >= 0) snapshot.records[existingRecordIndex] = nextRecord
   else snapshot.records.push(nextRecord)
@@ -249,7 +281,7 @@ function applyEntryMutation(snapshot: OfflineSnapshot, mutation: PendingEntryMut
     external_key: mutation.external_key,
     created_at: existing?.created_at ?? new Date(mutation.updated_at).toISOString(),
     updated_at: new Date(mutation.updated_at).toISOString(),
-    financial_categories: { name: category.name, category_type: category.category_type },
+    financial_categories: { name: category.name, category_type: category.category_type, expense_group_id: category.expense_group_id },
   }
   if (existingIndex >= 0) snapshot.entries[existingIndex] = nextEntry
   else snapshot.entries.push(nextEntry)
@@ -273,6 +305,7 @@ function createRecordMutation(snapshot: OfflineSnapshot, input: QueueRecordInput
     category_type: input.categoryType,
     category_name: name,
     category_sort_order: category?.sort_order ?? input.categorySortOrder,
+    expense_group_id: category?.expense_group_id ?? input.expenseGroupId ?? null,
     local_category_id: category?.id ?? crypto.randomUUID(),
     local_record_id: existingRecord?.id ?? crypto.randomUUID(),
     period: input.period,
@@ -294,6 +327,7 @@ function createCategoryMutation(snapshot: OfflineSnapshot, input: QueueCategoryI
     category_type: input.categoryType,
     category_name: name,
     category_sort_order: existing?.sort_order ?? input.categorySortOrder,
+    expense_group_id: existing?.expense_group_id ?? input.expenseGroupId ?? null,
     local_category_id: existing?.id ?? crypto.randomUUID(),
     updated_at: Date.now(),
   }
@@ -313,6 +347,7 @@ function createEntryMutation(snapshot: OfflineSnapshot, input: QueueEntryInput):
     category_type: input.categoryType,
     category_name: name,
     category_sort_order: category?.sort_order ?? input.categorySortOrder,
+    expense_group_id: category?.expense_group_id ?? input.expenseGroupId ?? null,
     local_category_id: category?.id ?? crypto.randomUUID(),
     entry_date: input.entryDate,
     period: input.period,
@@ -484,6 +519,7 @@ export async function queueHistoryImport(payload: HistoryFile, userId: string) {
       categoryType: record.type,
       categoryName: record.category,
       categorySortOrder: details.sort_order,
+      expenseGroupId: record.type === 'expense' ? importedExpenseGroupId(snapshot, record.category) : null,
       period: record.period,
       amount: record.amount,
       source: `Google Sheets · ${record.source_sheet}:${record.source_row}`,
@@ -499,6 +535,7 @@ export async function queueHistoryImport(payload: HistoryFile, userId: string) {
       categoryType: entry.type,
       categoryName: entry.category,
       categorySortOrder: details.sort_order,
+      expenseGroupId: entry.type === 'expense' ? importedExpenseGroupId(snapshot, entry.category) : null,
       period: entry.period,
       entryDate: entry.entry_date,
       amount: entry.amount,
@@ -543,6 +580,7 @@ export async function syncPendingChanges(userId: string) {
         category_type: mutation.category_type,
         name: mutation.category_name,
         sort_order: mutation.category_sort_order,
+        expense_group_id: mutation.category_type === 'expense' ? mutation.expense_group_id : null,
       })),
       { onConflict: 'user_id,category_type,name' },
     )
@@ -614,7 +652,7 @@ async function fetchAllMonthlyRecords() {
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from('worthdelta_monthly_records')
-      .select('*, financial_categories:worthdelta_financial_categories(name, category_type)')
+      .select('*, financial_categories:worthdelta_financial_categories(name, category_type, expense_group_id)')
       .order('period', { ascending: false })
       .range(from, from + 999)
     if (error) throw error
@@ -628,7 +666,7 @@ async function fetchAllLedgerEntries() {
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from('worthdelta_ledger_entries')
-      .select('*, financial_categories:worthdelta_financial_categories(name, category_type)')
+      .select('*, financial_categories:worthdelta_financial_categories(name, category_type, expense_group_id)')
       .order('entry_date', { ascending: false })
       .order('created_at', { ascending: false })
       .range(from, from + 999)
@@ -639,14 +677,17 @@ async function fetchAllLedgerEntries() {
 }
 
 export async function refreshRemoteSnapshot(userId: string) {
-  const [categoryResult, remoteRecords, remoteEntries] = await Promise.all([
+  const [groupResult, categoryResult, remoteRecords, remoteEntries] = await Promise.all([
+    supabase.from('worthdelta_expense_groups').select('*').order('sort_order'),
     supabase.from('worthdelta_financial_categories').select('*').order('sort_order'),
     fetchAllMonthlyRecords(),
     fetchAllLedgerEntries(),
   ])
+  if (groupResult.error) throw groupResult.error
   if (categoryResult.error) throw categoryResult.error
   const snapshot: OfflineSnapshot = {
     user_id: userId,
+    expense_groups: groupResult.data as ExpenseGroup[],
     categories: categoryResult.data as FinancialCategory[],
     records: remoteRecords,
     entries: remoteEntries,

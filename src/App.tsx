@@ -28,7 +28,7 @@ import {
   syncPendingChanges,
 } from './lib/offlineStore'
 import { supabase } from './lib/supabase'
-import type { CategoryType, FinancialCategory, LedgerEntry, MonthlyRecord } from './types'
+import type { CategoryType, ExpenseGroup, FinancialCategory, LedgerEntry, MonthlyRecord } from './types'
 import './App.css'
 
 const categoryMeta: Record<CategoryType, { label: string; icon: typeof Wallet }> = {
@@ -90,6 +90,7 @@ interface CategoryBreakdown {
   amount: number
   percentage: number
   color: string
+  expenseGroupId: string | null
 }
 
 const chartColors = ['#228b22', '#2f6e9e', '#c46a3a', '#8064a2', '#c24d57', '#b08720', '#41827a', '#667085']
@@ -223,14 +224,35 @@ function RecordSectionCard({
   period,
   total,
   categories,
+  expenseGroups,
 }: {
   type: CategoryType
   period: string
   total: number
   categories: CategoryBreakdown[]
+  expenseGroups: ExpenseGroup[]
 }) {
   const meta = categoryMeta[type]
   const Icon = meta.icon
+  const categoryRow = (category: CategoryBreakdown) => <div className="category-breakdown-row" key={category.id}>
+    <span className="category-color" style={{ background: category.color }} aria-hidden="true" />
+    <span className="category-breakdown-name"><strong>{category.name}</strong><span className="category-progress" aria-hidden="true"><i style={{ width: `${category.percentage}%`, background: category.color }} /></span></span>
+    <span className="category-breakdown-value"><strong>{formatCurrency(category.amount)}</strong><small>{category.percentage.toFixed(category.percentage > 0 && category.percentage < 1 ? 1 : 0)}%</small></span>
+  </div>
+  const groupedExpenses = type === 'expense'
+    ? [
+        ...expenseGroups.map((group) => ({
+          id: group.id,
+          name: group.name,
+          categories: categories.filter((category) => category.expenseGroupId === group.id),
+        })),
+        {
+          id: 'ungrouped',
+          name: 'Unassigned',
+          categories: categories.filter((category) => !category.expenseGroupId),
+        },
+      ].filter((group) => group.categories.length > 0)
+    : []
 
   return (
     <article className={`record-section-card ${type}`}>
@@ -240,16 +262,88 @@ function RecordSectionCard({
       </header>
       <div className="record-section-body">
         <DonutChart label={meta.label} total={total} categories={categories} />
-        {categories.length === 0 ? <div className="category-empty"><p>No {meta.label.toLocaleLowerCase('en')} categories yet.</p><a href="#settings">Add categories in Settings</a></div> : <div className="category-breakdown-list">
-          {categories.map((category) => <div className="category-breakdown-row" key={category.id}>
-            <span className="category-color" style={{ background: category.color }} aria-hidden="true" />
-            <span className="category-breakdown-name"><strong>{category.name}</strong><span className="category-progress" aria-hidden="true"><i style={{ width: `${category.percentage}%`, background: category.color }} /></span></span>
-            <span className="category-breakdown-value"><strong>{formatCurrency(category.amount)}</strong><small>{category.percentage.toFixed(category.percentage > 0 && category.percentage < 1 ? 1 : 0)}%</small></span>
-          </div>)}
-        </div>}
+        {categories.length === 0 ? <div className="category-empty"><p>No {meta.label.toLocaleLowerCase('en')} categories yet.</p><a href="#settings">Add categories in Settings</a></div> : type === 'expense' ? <div className="category-breakdown-list expense-breakdown-list">
+          {groupedExpenses.map((group) => <section className="expense-breakdown-group" key={group.id}>
+            <header><strong>{group.name}</strong><span>{formatCurrency(group.categories.reduce((sum, category) => sum + category.amount, 0))}</span></header>
+            {group.categories.map(categoryRow)}
+          </section>)}
+        </div> : <div className="category-breakdown-list">{categories.map(categoryRow)}</div>}
       </div>
     </article>
   )
+}
+
+function ExpenseGroupEditor({
+  group,
+  saving,
+  onSave,
+}: {
+  group: ExpenseGroup
+  saving: boolean
+  onSave: (name: string) => void
+}) {
+  const [name, setName] = useState(group.name)
+
+  useEffect(() => setName(group.name), [group.name])
+
+  const trimmedName = name.trim()
+  const unchanged = trimmedName === group.name
+
+  return <form className="expense-group-edit-row" onSubmit={(event) => {
+    event.preventDefault()
+    if (!trimmedName || unchanged) return
+    onSave(trimmedName)
+  }}>
+    <label>
+      <span>Group {group.sort_order + 1}</span>
+      <input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required />
+    </label>
+    <button type="submit" disabled={saving || !trimmedName || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle aria-hidden="true" />}Save</button>
+  </form>
+}
+
+function CategoryEditor({
+  category,
+  expenseGroups,
+  saving,
+  onSave,
+}: {
+  category: FinancialCategory
+  expenseGroups: ExpenseGroup[]
+  saving: boolean
+  onSave: (name: string, expenseGroupId: string | null) => void
+}) {
+  const [name, setName] = useState(category.name)
+  const [expenseGroupId, setExpenseGroupId] = useState(category.expense_group_id ?? '')
+
+  useEffect(() => {
+    setName(category.name)
+    setExpenseGroupId(category.expense_group_id ?? '')
+  }, [category.name, category.expense_group_id])
+
+  const trimmedName = name.trim()
+  const nextExpenseGroupId = category.category_type === 'expense' ? expenseGroupId : null
+  const unchanged = trimmedName === category.name && nextExpenseGroupId === category.expense_group_id
+  const missingExpenseGroup = category.category_type === 'expense' && !expenseGroupId
+
+  return <form className={`category-edit-row ${category.category_type === 'expense' ? 'with-group' : ''}`} onSubmit={(event) => {
+    event.preventDefault()
+    if (!trimmedName || missingExpenseGroup || unchanged) return
+    onSave(trimmedName, nextExpenseGroupId)
+  }}>
+    <label>
+      <span className="sr-only">Category name: {category.name}</span>
+      <input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required />
+    </label>
+    {category.category_type === 'expense' && <label>
+      <span className="sr-only">Expense group for {category.name}</span>
+      <select value={expenseGroupId} onChange={(event) => setExpenseGroupId(event.target.value)} required>
+        <option value="" disabled>Choose group</option>
+        {expenseGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+      </select>
+    </label>}
+    <button type="submit" disabled={saving || !trimmedName || missingExpenseGroup || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle aria-hidden="true" />}Save</button>
+  </form>
 }
 
 function AnnualChart({ years }: { years: AnnualSummary[] }) {
@@ -365,6 +459,7 @@ function YearSparkline({ points }: { points: AnnualSummary['assetTrend'] }) {
 
 function Dashboard({ session }: { session: Session }) {
   const [view, setView] = useState<DashboardView>(dashboardViewFromHash)
+  const [expenseGroups, setExpenseGroups] = useState<ExpenseGroup[]>([])
   const [categories, setCategories] = useState<FinancialCategory[]>([])
   const [records, setRecords] = useState<MonthlyRecord[]>([])
   const [entries, setEntries] = useState<LedgerEntry[]>([])
@@ -387,6 +482,9 @@ function Dashboard({ session }: { session: Session }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [categorySaving, setCategorySaving] = useState<CategoryType | null>(null)
+  const [categoryEditSavingId, setCategoryEditSavingId] = useState<string | null>(null)
+  const [expenseGroupSavingId, setExpenseGroupSavingId] = useState<string | null>(null)
+  const [newExpenseGroupId, setNewExpenseGroupId] = useState('')
   const [newCategoryNames, setNewCategoryNames] = useState<Record<CategoryType, string>>({
     asset: '',
     income: '',
@@ -465,11 +563,18 @@ function Dashboard({ session }: { session: Session }) {
     }
   }, [mobileNavOpen])
 
-  const showSnapshot = useCallback((snapshot: { categories: FinancialCategory[]; records: MonthlyRecord[]; entries: LedgerEntry[] }) => {
+  const showSnapshot = useCallback((snapshot: { expense_groups: ExpenseGroup[]; categories: FinancialCategory[]; records: MonthlyRecord[]; entries: LedgerEntry[] }) => {
+    setExpenseGroups(snapshot.expense_groups)
     setCategories(snapshot.categories)
     setRecords(snapshot.records)
     setEntries(snapshot.entries)
   }, [])
+
+  useEffect(() => {
+    setNewExpenseGroupId((current) => expenseGroups.some((group) => group.id === current)
+      ? current
+      : expenseGroups[0]?.id ?? '')
+  }, [expenseGroups])
 
   const loadData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
@@ -580,6 +685,12 @@ function Dashboard({ session }: { session: Session }) {
   const income = totalFor('income')
   const expenses = totalFor('expense')
   const investments = totalFor('investment')
+  const expenseGroupTotals = expenseGroups.map((group) => ({
+    ...group,
+    amount: monthRecords
+      .filter((record) => record.financial_categories?.category_type === 'expense' && record.financial_categories.expense_group_id === group.id)
+      .reduce((total, record) => total + Number(record.amount), 0),
+  }))
   const recordPeriods = useMemo(
     () => [...new Set(records.map((record) => record.period))].sort().reverse(),
     [records],
@@ -614,6 +725,7 @@ function Dashboard({ session }: { session: Session }) {
             amount,
             percentage: total > 0 ? (amount / total) * 100 : 0,
             color: chartColors[index % chartColors.length],
+            expenseGroupId: category.expense_group_id,
           }
         })
         .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name))
@@ -682,6 +794,10 @@ function Dashboard({ session }: { session: Session }) {
     event.preventDefault()
     const categoryNameValue = newCategoryNames[categoryType].trim()
     if (!categoryNameValue) return
+    if (categoryType === 'expense' && !newExpenseGroupId) {
+      setNotice('Expense groups are not ready yet. Run the latest database migration, then try again.')
+      return
+    }
     if (categories.some((category) =>
       category.category_type === categoryType &&
       category.name.toLocaleLowerCase('en') === categoryNameValue.toLocaleLowerCase('en'),
@@ -704,6 +820,7 @@ function Dashboard({ session }: { session: Session }) {
         categoryType,
         categoryName: categoryNameValue,
         categorySortOrder: sortOrder,
+        expenseGroupId: categoryType === 'expense' ? newExpenseGroupId : null,
       })
       showSnapshot(queued.snapshot)
       setPendingCount(queued.pendingCount)
@@ -734,7 +851,103 @@ function Dashboard({ session }: { session: Session }) {
     }
   }
 
+  async function handleUpdateCategory(category: FinancialCategory, nextName: string, nextExpenseGroupId: string | null) {
+    const trimmedName = nextName.trim()
+    if (!trimmedName) return
+    if (category.category_type === 'expense' && !expenseGroups.some((group) => group.id === nextExpenseGroupId)) {
+      setNotice('Choose a valid expense group before saving this category.')
+      return
+    }
+    if (categories.some((item) =>
+      item.id !== category.id &&
+      item.category_type === category.category_type &&
+      item.name.toLocaleLowerCase('en') === trimmedName.toLocaleLowerCase('en'),
+    )) {
+      setNotice(`${trimmedName} already exists under ${categoryMeta[category.category_type].label}.`)
+      return
+    }
+    if (!navigator.onLine) {
+      setNotice('Reconnect to rename or move an existing category. New categories can still be added offline.')
+      return
+    }
+
+    setCategoryEditSavingId(category.id)
+    setSyncStatus('syncing')
+    setNotice('')
+    try {
+      await syncPendingChanges(session.user.id)
+      const { error } = await supabase
+        .from('worthdelta_financial_categories')
+        .update({
+          name: trimmedName,
+          expense_group_id: category.category_type === 'expense' ? nextExpenseGroupId : null,
+        })
+        .eq('id', category.id)
+        .eq('user_id', session.user.id)
+      if (error) throw error
+
+      const remote = await refreshRemoteSnapshot(session.user.id)
+      showSnapshot(remote.snapshot)
+      setPendingCount(remote.pendingCount)
+      setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
+      setLoadError('')
+      setNotice(`${trimmedName} updated.`)
+    } catch (error) {
+      const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
+      setPendingCount(queued)
+      setSyncStatus(navigator.onLine ? 'pending' : 'offline')
+      setNotice(messageFrom(error))
+    } finally {
+      setCategoryEditSavingId(null)
+    }
+  }
+
+  async function handleUpdateExpenseGroup(group: ExpenseGroup, nextName: string) {
+    const trimmedName = nextName.trim()
+    if (!trimmedName) return
+    if (expenseGroups.some((item) =>
+      item.id !== group.id && item.name.toLocaleLowerCase('en') === trimmedName.toLocaleLowerCase('en'),
+    )) {
+      setNotice(`An expense group named ${trimmedName} already exists.`)
+      return
+    }
+    if (!navigator.onLine) {
+      setNotice('Reconnect to rename a main expense group.')
+      return
+    }
+
+    setExpenseGroupSavingId(group.id)
+    setSyncStatus('syncing')
+    setNotice('')
+    try {
+      await syncPendingChanges(session.user.id)
+      const { error } = await supabase
+        .from('worthdelta_expense_groups')
+        .update({ name: trimmedName })
+        .eq('id', group.id)
+        .eq('user_id', session.user.id)
+      if (error) throw error
+
+      const remote = await refreshRemoteSnapshot(session.user.id)
+      showSnapshot(remote.snapshot)
+      setPendingCount(remote.pendingCount)
+      setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
+      setLoadError('')
+      setNotice(`Expense group renamed to ${trimmedName}.`)
+    } catch (error) {
+      const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
+      setPendingCount(queued)
+      setSyncStatus(navigator.onLine ? 'pending' : 'offline')
+      setNotice(messageFrom(error))
+    } finally {
+      setExpenseGroupSavingId(null)
+    }
+  }
+
   const filteredCategories = categories.filter((category) => category.category_type === type)
+  const ungroupedExpenseCategories = type === 'expense'
+    ? filteredCategories.filter((category) => !expenseGroups.some((group) => group.id === category.expense_group_id))
+    : []
   const EntryTypeIcon = categoryMeta[type].icon
   const ledgerMonths = [...new Set(entries.map((entry) => entry.period.slice(0, 7)))].sort().reverse()
   const filteredEntries = entries.filter((entry) => {
@@ -761,12 +974,12 @@ function Dashboard({ session }: { session: Session }) {
       : syncStatus === 'pending'
         ? `${pendingCount} waiting to sync`
         : 'Synced'
-  const databaseSetupRequired = /schema cache|PGRST205|could not find the table/i.test(loadError)
+  const databaseSetupRequired = /schema cache|PGRST20[045]|could not find the table|expense_group_id/i.test(loadError)
   const viewCopy = view === 'overview'
     ? { title: 'Personal finance dashboard', lead: 'Every year, in view.', detail: `Latest asset snapshot: ${formatMonth(activePeriod)}` }
     : view === 'records'
       ? { title: 'Your financial records', lead: 'Every category, in view.', detail: `${entries.length.toLocaleString()} entries across ${categories.length.toLocaleString()} categories` }
-      : { title: 'Category settings', lead: 'Make WorthDelta yours.', detail: 'Organise categories under the four financial sections' }
+      : { title: 'Category settings', lead: 'Make WorthDelta yours.', detail: 'Edit every category and organise expenses into main groups' }
 
   return (
     <div className="dashboard-shell">
@@ -787,14 +1000,14 @@ function Dashboard({ session }: { session: Session }) {
       <main className="dashboard-main">
         <header className="dashboard-header"><div><h1>{viewCopy.title}</h1><p className="header-subtitle"><strong>{viewCopy.lead}</strong><span aria-hidden="true">·</span><span>{viewCopy.detail}</span></p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span></div></header>
 
-        {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>{databaseSetupRequired ? 'Database setup required' : 'Sync paused'}</strong><p>{databaseSetupRequired ? 'Run the included traceable-ledger migration before adding or importing detailed entries.' : `${loadError} Your locally saved changes are safe and will retry automatically.`}</p>{databaseSetupRequired && <code>supabase/migrations/20260816030000_traceable_ledger.sql</code>}</div></section>}
+        {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>{databaseSetupRequired ? 'Database setup required' : 'Sync paused'}</strong><p>{databaseSetupRequired ? 'Run the included migrations to enable expense groups and editable category assignments.' : `${loadError} Your locally saved changes are safe and will retry automatically.`}</p>{databaseSetupRequired && <code>supabase/migrations/20260817000000_expense_groups_and_editable_categories.sql</code>}</div></section>}
         {notice && <p className="notice" role="status">{notice}</p>}
 
         {view === 'overview' ? <>
         <section className="metric-grid" aria-label="Latest monthly summary">
           <article><span>Asset value</span><strong>{formatCurrency(assets)}</strong><small>Current snapshot</small></article>
           <article><span>Monthly income</span><strong>{formatCurrency(income)}</strong><small>{formatMonth(activePeriod)}</small></article>
-          <article><span>Monthly expenses</span><strong>{formatCurrency(expenses)}</strong><small>{income ? `${Math.round((expenses / income) * 100)}% of income` : 'No income recorded'}</small></article>
+          <article><span>Monthly expenses</span><strong>{formatCurrency(expenses)}</strong><small className="expense-metric-breakdown">{expenseGroupTotals.length ? expenseGroupTotals.map((group) => <span key={group.id}>{group.name} {formatCurrency(group.amount)}</span>) : income ? `${Math.round((expenses / income) * 100)}% of income` : 'No income recorded'}</small></article>
           <article><span>Invested</span><strong>{formatCurrency(investments)}</strong><small>{formatMonth(activePeriod)}</small></article>
         </section>
 
@@ -822,7 +1035,7 @@ function Dashboard({ session }: { session: Session }) {
         </section>
 
         {loading ? <div className="loading-state"><SpinnerGap className="spin" aria-hidden="true" />Loading category sections…</div> : <section className="record-section-grid" aria-label={`Category summaries for ${formatMonth(summaryPeriod)}`}>
-          {recordSections.map((section) => <RecordSectionCard key={section.type} type={section.type} period={summaryPeriod} total={section.total} categories={section.categories} />)}
+          {recordSections.map((section) => <RecordSectionCard key={section.type} type={section.type} period={summaryPeriod} total={section.total} categories={section.categories} expenseGroups={expenseGroups} />)}
         </section>}
 
         <section className="panel recent-panel" id="ledger">
@@ -840,8 +1053,15 @@ function Dashboard({ session }: { session: Session }) {
         </section>
         </> : <>
         <section className="panel settings-intro">
-          <div><p className="eyebrow">Category organiser</p><h2>Set up your four sections</h2><p>Add the category names you want to use when recording money. New categories are available in the Add entry form immediately, even while offline.</p></div>
+          <div><p className="eyebrow">Category organiser</p><h2>Edit categories and expense groups</h2><p>Rename every category, move expenses between the two main groups, or rename the main groups themselves. New categories are available in the Add entry form immediately.</p></div>
           <a className="secondary-button" href="#records"><Receipt aria-hidden="true" />Back to records</a>
+        </section>
+
+        <section className="panel expense-group-settings" aria-labelledby="expense-group-settings-title">
+          <header><div><p className="eyebrow">Main expense categories</p><h2 id="expense-group-settings-title">Planned and unplanned</h2><p>These names appear in your overview, records, and expense entry form.</p></div><span>{expenseGroups.length} groups</span></header>
+          {expenseGroups.length === 0 ? <p className="settings-empty">Run the latest database migration to set up the two expense groups.</p> : <div className="expense-group-editor-list">
+            {expenseGroups.map((group) => <ExpenseGroupEditor key={group.id} group={group} saving={expenseGroupSavingId === group.id} onSave={(name) => void handleUpdateExpenseGroup(group, name)} />)}
+          </div>}
         </section>
 
         <section className="category-settings-grid" aria-label="Financial category settings">
@@ -851,11 +1071,12 @@ function Dashboard({ session }: { session: Session }) {
             const sectionCategories = categories.filter((category) => category.category_type === categoryType)
             return <article className={`category-settings-card ${categoryType}`} key={categoryType}>
               <header><span className={`record-section-icon ${categoryType}`}><Icon weight="duotone" aria-hidden="true" /></span><div><h2>{meta.label}</h2><p>{sectionCategories.length} {sectionCategories.length === 1 ? 'category' : 'categories'}</p></div></header>
-              <form className="category-add-form" onSubmit={(event) => void handleAddCategory(event, categoryType)}>
+              <form className={`category-add-form ${categoryType === 'expense' ? 'with-group' : ''}`} onSubmit={(event) => void handleAddCategory(event, categoryType)}>
                 <label><span className="sr-only">New {meta.label.toLocaleLowerCase('en')} category</span><input value={newCategoryNames[categoryType]} onChange={(event) => setNewCategoryNames((current) => ({ ...current, [categoryType]: event.target.value }))} placeholder={`New ${meta.label.toLocaleLowerCase('en')} category`} maxLength={80} required /></label>
-                <button type="submit" disabled={categorySaving !== null}>{categorySaving === categoryType ? <SpinnerGap className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}Add</button>
+                {categoryType === 'expense' && <label><span className="sr-only">Main group for new expense category</span><select value={newExpenseGroupId} onChange={(event) => setNewExpenseGroupId(event.target.value)} required><option value="" disabled>Choose group</option>{expenseGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>}
+                <button type="submit" disabled={categorySaving !== null || (categoryType === 'expense' && !newExpenseGroupId)}>{categorySaving === categoryType ? <SpinnerGap className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}Add</button>
               </form>
-              {sectionCategories.length === 0 ? <p className="settings-empty">No categories here yet.</p> : <ul className="category-chip-list">{sectionCategories.map((category) => <li key={category.id}><span aria-hidden="true" />{category.name}</li>)}</ul>}
+              {sectionCategories.length === 0 ? <p className="settings-empty">No categories here yet.</p> : <div className="category-edit-list">{sectionCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={expenseGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => void handleUpdateCategory(category, name, expenseGroupId)} />)}</div>}
             </article>
           })}
         </section>
@@ -880,7 +1101,10 @@ function Dashboard({ session }: { session: Session }) {
             <header className="entry-dialog-heading"><div><p className="eyebrow">Traceable ledger</p><h2 id="entry-dialog-title">Add a new entry</h2><p>Every entry updates its monthly category total.</p></div><button type="button" onClick={() => setEntryDialogOpen(false)} aria-label="Close add entry form"><X aria-hidden="true" /></button></header>
             <form onSubmit={handleSave}>
               <div className={`entry-type-badge ${type}`}><EntryTypeIcon weight="duotone" aria-hidden="true" /><span>{categoryMeta[type].label}</span></div>
-              <label><span>Category</span><select value={categoryName} onChange={(event) => setCategoryName(event.target.value)} required><option value="" disabled>{filteredCategories.length ? 'Choose a category' : 'Add a category in Settings first'}</option>{filteredCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label>
+              <label><span>Category</span><select value={categoryName} onChange={(event) => setCategoryName(event.target.value)} required><option value="" disabled>{filteredCategories.length ? 'Choose a category' : 'Add a category in Settings first'}</option>{type === 'expense' ? <>
+                {expenseGroups.map((group) => { const groupCategories = filteredCategories.filter((category) => category.expense_group_id === group.id); return groupCategories.length > 0 ? <optgroup key={group.id} label={group.name}>{groupCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</optgroup> : null })}
+                {ungroupedExpenseCategories.length > 0 && <optgroup label="Unassigned">{ungroupedExpenseCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</optgroup>}
+              </> : filteredCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label>
               {filteredCategories.length === 0 && <a className="dialog-settings-link" href="#settings" onClick={() => setEntryDialogOpen(false)}><GearSix aria-hidden="true" />Open category settings</a>}
               <label><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What makes up this amount?" maxLength={200} required /></label>
               <div className="form-row"><label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} required /></label><label><span>Amount (MYR)</span><input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></label></div>

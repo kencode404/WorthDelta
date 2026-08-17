@@ -1,11 +1,19 @@
 export type CategoryType = 'asset' | 'income' | 'expense' | 'investment'
 
+export interface ExpenseGroup {
+  id: string
+  user_id: string
+  name: string
+  sort_order: number
+}
+
 export interface FinancialCategory {
   id: string
   user_id: string
   category_type: CategoryType
   name: string
   sort_order: number
+  expense_group_id: string | null
 }
 
 export interface MonthlyRecord {
@@ -16,7 +24,7 @@ export interface MonthlyRecord {
   amount: number
   note: string | null
   source: string
-  financial_categories?: Pick<FinancialCategory, 'name' | 'category_type'> | null
+  financial_categories?: Pick<FinancialCategory, 'name' | 'category_type' | 'expense_group_id'> | null
 }
 
 export interface LedgerEntry {
@@ -34,7 +42,7 @@ export interface LedgerEntry {
   external_key: string | null
   created_at?: string
   updated_at?: string
-  financial_categories?: Pick<FinancialCategory, 'name' | 'category_type'> | null
+  financial_categories?: Pick<FinancialCategory, 'name' | 'category_type' | 'expense_group_id'> | null
 }
 
 export interface HistoryFile {

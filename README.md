@@ -8,6 +8,8 @@ Vite, and Supabase.
 - Shared email and Google authentication through K-Super Hub
 - Private per-user categories, monthly summaries, and detailed ledger entries with row-level security
 - Asset, income, expense, and investment summaries
+- Planned and unplanned expense groups, with editable group names and category assignments
+- Renameable financial categories in Settings
 - Spreadsheet-inspired annual overview with a combined comparison chart, yearly totals, and progress cards
 - Separate Records view for category analysis, future entries, and the full audit trail
 - Selectable full-history chart for every asset, income, expense, and investment category
