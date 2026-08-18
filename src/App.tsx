@@ -619,6 +619,7 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
   const [offset, setOffset] = useState(0)
   const dragRef = useRef<{ x: number; offset: number } | null>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const pointersRef = useRef(new Map<number, number>())
   const pinchRef = useRef<{ distance: number; midpoint: number; span: number; offset: number } | null>(null)
@@ -732,10 +733,24 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
   const labelEvery = Math.max(1, Math.ceil(chartPoints.length / 8))
   const rangeLabel = `${chartPoints[0]?.label ?? ''} – ${chartPoints.at(-1)?.label ?? ''}`
 
-  const indexFromClientX = (clientX: number, bounds: DOMRect) => {
-    if (bounds.width === 0 || chartPoints.length < 2) return 0
-    const viewX = ((clientX - bounds.left) / bounds.width) * width
-    const ratio = (viewX - padding.left) / plotWidth
+  /**
+   * Screen space and chart space are not the same box: the svg is letterboxed when
+   * enlarged, wider than its wrapper inline, and rotated a quarter turn on a portrait
+   * phone. getScreenCTM knows all of that, so let it do the conversion.
+   */
+  const localX = (clientX: number, clientY: number) => {
+    const svg = svgRef.current
+    const matrix = svg?.getScreenCTM()
+    if (!svg || !matrix) return null
+    const point = svg.createSVGPoint()
+    point.x = clientX
+    point.y = clientY
+    return point.matrixTransform(matrix.inverse()).x
+  }
+
+  const indexFromLocalX = (x: number) => {
+    if (chartPoints.length < 2) return 0
+    const ratio = (x - padding.left) / plotWidth
     return Math.max(0, Math.min(chartPoints.length - 1, Math.round(ratio * (chartPoints.length - 1))))
   }
 
@@ -744,15 +759,16 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
     return { distance: Math.abs(first - second), midpoint: (first + second) / 2 }
   }
 
-  const panBy = (pixels: number, width: number, fromOffset: number) => {
-    const movedPoints = (pixels / width) * chartPoints.length
+  const panBy = (localDelta: number, fromOffset: number) => {
+    const movedPoints = (localDelta / plotWidth) * Math.max(1, chartPoints.length - 1)
     const perPoint = monthly ? 1 : 12
     setOffset(Math.max(0, Math.min(maxOffset, Math.round(fromOffset - movedPoints * perPoint))))
   }
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect()
-    if (pointersRef.current.has(event.pointerId)) pointersRef.current.set(event.pointerId, event.clientX)
+    const x = localX(event.clientX, event.clientY)
+    if (x === null) return
+    if (pointersRef.current.has(event.pointerId)) pointersRef.current.set(event.pointerId, x)
 
     // two fingers: spread to zoom, slide to pan
     if (pointersRef.current.size >= 2 && pinchRef.current) {
@@ -761,20 +777,20 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
         const next = Math.round(pinchRef.current.span * (pinchRef.current.distance / distance))
         setSpan(Math.max(3, Math.min(total, next)))
       }
-      panBy(pinchRef.current.midpoint - midpoint, bounds.width, pinchRef.current.offset)
+      panBy(pinchRef.current.midpoint - midpoint, pinchRef.current.offset)
       return
     }
 
     // one finger reads values, the way a price chart scrubs; a mouse drag pans
     if (event.pointerType === 'touch') {
-      setActiveIndex(indexFromClientX(event.clientX, bounds))
+      setActiveIndex(indexFromLocalX(x))
       return
     }
     if (dragRef.current) {
-      panBy(dragRef.current.x - event.clientX, bounds.width, dragRef.current.offset)
+      panBy(dragRef.current.x - x, dragRef.current.offset)
       return
     }
-    setActiveIndex(indexFromClientX(event.clientX, bounds))
+    setActiveIndex(indexFromLocalX(x))
   }
 
   const chartBody = (
@@ -807,7 +823,9 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
         onPointerDown={(event) => {
           event.preventDefault() // stop the drag turning into a text selection
           event.currentTarget.setPointerCapture?.(event.pointerId)
-          pointersRef.current.set(event.pointerId, event.clientX)
+          const x = localX(event.clientX, event.clientY)
+          if (x === null) return
+          pointersRef.current.set(event.pointerId, x)
           if (pointersRef.current.size === 2) {
             pinchRef.current = { ...twoFingers(), span: span ?? total, offset }
             dragRef.current = null
@@ -815,9 +833,9 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
           } else if (pointersRef.current.size === 1) {
             if (event.pointerType === 'touch') {
               // show the point straight away, without needing a drag first
-              setActiveIndex(indexFromClientX(event.clientX, event.currentTarget.getBoundingClientRect()))
+              setActiveIndex(indexFromLocalX(x))
             } else {
-              dragRef.current = { x: event.clientX, offset }
+              dragRef.current = { x, offset }
             }
           }
         }}
@@ -833,7 +851,7 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
           dragRef.current = null
         }}
       >
-        <svg className="annual-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Income, expenses, investments and net worth, ${rangeLabel}`}>
+        <svg ref={svgRef} className="annual-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Income, expenses, investments and net worth, ${rangeLabel}`}>
           <text className="axis-caption" x={padding.left} y={padding.top - 16}>Money flow (RM)</text>
           <text className="axis-caption axis-caption-worth" x={width - padding.right} y={padding.top - 16} textAnchor="end">Net worth (RM)</text>
           {[0, .25, .5, .75, 1].map((line) => {
