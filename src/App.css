@@ -226,7 +226,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .donut-group-key i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; }
 .donut-group-key b { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .donut-group-key strong { color: var(--navy); font-size: 9px; font-variant-numeric: tabular-nums; }
-.category-breakdown-list { min-width: 0; max-height: 230px; overflow-y: auto; padding-right: 3px; }
+.category-breakdown-list { min-width: 0; max-height: 230px; overflow-y: auto; padding-right: 7px; }
 .category-breakdown-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 52px; border-bottom: 1px solid rgba(23, 46, 87, .1); }
 .category-breakdown-row:last-child { border-bottom: 0; }
 .category-breakdown-button { width: 100%; padding: 0 5px; border: 0; border-bottom: 1px solid rgba(23, 46, 87, .1); border-radius: 8px; color: inherit; background: transparent; font: inherit; text-align: left; transition: background-color 140ms ease, box-shadow 140ms ease; }
@@ -365,6 +365,16 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .category-entry-empty svg { width: 30px; height: 30px; color: #567a9a; }
 .category-entry-empty strong { margin-top: 12px; color: var(--ink); font-size: 13px; }
 .category-entry-empty p { max-width: 390px; margin: 5px 0 0; font-size: 11px; line-height: 1.5; }
+@media (pointer: fine) {
+  .category-breakdown-list, .category-entry-list, .annual-chart-wrap, .entry-dialog { scrollbar-width: thin; scrollbar-color: rgba(23, 46, 87, .26) transparent; }
+  .category-breakdown-list::-webkit-scrollbar, .category-entry-list::-webkit-scrollbar, .annual-chart-wrap::-webkit-scrollbar, .entry-dialog::-webkit-scrollbar { width: 4px; height: 4px; }
+  .category-breakdown-list::-webkit-scrollbar-track, .category-entry-list::-webkit-scrollbar-track, .annual-chart-wrap::-webkit-scrollbar-track, .entry-dialog::-webkit-scrollbar-track { background: transparent; }
+  .category-breakdown-list::-webkit-scrollbar-thumb, .category-entry-list::-webkit-scrollbar-thumb, .annual-chart-wrap::-webkit-scrollbar-thumb, .entry-dialog::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(23, 46, 87, .26); }
+  .category-breakdown-list:hover::-webkit-scrollbar-thumb, .category-entry-list:hover::-webkit-scrollbar-thumb, .annual-chart-wrap:hover::-webkit-scrollbar-thumb, .entry-dialog:hover::-webkit-scrollbar-thumb { background: rgba(34, 139, 34, .5); }
+  .category-breakdown-list::-webkit-scrollbar-thumb:hover, .category-entry-list::-webkit-scrollbar-thumb:hover, .annual-chart-wrap::-webkit-scrollbar-thumb:hover, .entry-dialog::-webkit-scrollbar-thumb:hover { background: var(--brand); }
+  .category-breakdown-list:hover, .category-entry-list:hover, .annual-chart-wrap:hover, .entry-dialog:hover { scrollbar-color: rgba(34, 139, 34, .5) transparent; }
+}
+
 .spin { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .boot-screen { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 100svh; color: var(--brand); background: var(--canvas); }
