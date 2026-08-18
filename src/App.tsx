@@ -29,6 +29,7 @@ import {
   refreshRemoteSnapshot,
   syncPendingChanges,
 } from './lib/offlineStore'
+import { fetchMyrRate } from './lib/exchangeRate'
 import { captureChartImage, downloadWorkbook } from './lib/exportWorkbook'
 import { supabase } from './lib/supabase'
 import type { CategoryType, ExpenseGroup, FinancialCategory, LedgerEntry, MonthlyRecord } from './types'
@@ -1187,12 +1188,9 @@ function Dashboard({ session }: { session: Session }) {
 
     let cancelled = false
     setRateLoading(true)
-    fetch(`https://open.er-api.com/v6/latest/${currency}`)
-      .then((response) => response.json())
-      .then((payload) => {
+    fetchMyrRate(currency)
+      .then(({ rate: value }) => {
         if (cancelled) return
-        const value = payload?.rates?.MYR
-        if (typeof value !== 'number') throw new Error('No MYR rate for this currency.')
         writeCachedRate(currency, value)
         setRate(value)
         setRateStamp(new Date().toISOString())

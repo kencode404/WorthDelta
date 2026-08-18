@@ -1,3 +1,4 @@
+import { fetchMyrRate } from './exchangeRate'
 import { supabase } from './supabase'
 import type {
   CategoryType,
@@ -637,13 +638,10 @@ export async function syncPendingChanges(userId: string) {
     const rates = new Map<string, number>()
     for (const code of new Set(awaitingRate.map((mutation) => mutation.currency as string))) {
       try {
-        const response = await fetch(`https://open.er-api.com/v6/latest/${code}`)
-        const payload = await response.json()
-        const value = payload?.rates?.MYR
-        if (typeof value !== 'number') throw new Error('missing rate')
-        rates.set(code, value)
+        const { rate } = await fetchMyrRate(code)
+        rates.set(code, rate)
       } catch {
-        throw new Error(`Could not get today's ${code} rate, so ${awaitingRate.length === 1 ? 'that entry stays' : 'those entries stay'} queued. They will convert on the next sync.`)
+        throw new Error(`No source could give today's ${code} rate, so ${awaitingRate.length === 1 ? 'that entry stays' : 'those entries stay'} queued. They will convert on the next sync.`)
       }
     }
     awaitingRate.forEach((mutation) => {
