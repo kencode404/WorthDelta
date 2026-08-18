@@ -195,43 +195,39 @@ function DonutChart({
   groups?: DonutGroupBreakdown[]
 }) {
   const [activeKey, setActiveKey] = useState<string | null>(null)
-  const active = categories.find((category) => activeKey === category.id)
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
+  const activeCategory = categories.find((category) => activeKey === category.id)
+  const selectedGroup = groups.find((group) => group.id === selectedGroupId)
+  const active = selectedGroup ?? activeCategory
   const visibleCategories = categories.filter((category) => category.amount > 0)
   const hasGroupLegend = groups.length > 0
   const hasGroupSeparation = new Set(visibleCategories.map((category) => category.expenseGroupId ?? 'ungrouped')).size > 1
-  const groupColors = new Map(groups.map((group) => [group.id, group.color]))
+  const groupBoundaryIndexes = visibleCategories.flatMap((category, index) => {
+    const nextCategory = visibleCategories[(index + 1) % visibleCategories.length]
+    return hasGroupSeparation && category.expenseGroupId !== nextCategory?.expenseGroupId ? [index] : []
+  })
+  const sharedGroupGap = groupBoundaryIndexes.length > 0
+    ? Math.min(1.4, ...groupBoundaryIndexes.map((index) => visibleCategories[index].percentage * .35))
+    : 0
   let categoryOffset = 0
   const categorySegments = visibleCategories.map((category, index) => {
     const dashOffset = -categoryOffset
-    const nextCategory = visibleCategories[(index + 1) % visibleCategories.length]
-    const endsGroup = hasGroupSeparation && category.expenseGroupId !== nextCategory?.expenseGroupId
-    const groupGap = endsGroup ? Math.min(1.2, category.percentage * .25) : 0
+    const groupGap = groupBoundaryIndexes.includes(index) ? sharedGroupGap : 0
     const visiblePercentage = category.percentage - groupGap
     categoryOffset += category.percentage
     return { category, dashOffset, visiblePercentage }
   })
 
   return (
-    <div className={`donut-wrap ${hasGroupLegend ? 'has-group-outlines' : ''}`}>
+    <div className={`donut-wrap ${selectedGroup ? 'group-selected' : ''}`}>
       <div className="donut-canvas">
         <svg className="donut-chart" viewBox="0 0 120 120" role="img" aria-label={`${label} category proportions${hasGroupLegend ? '. Main group percentages are listed below' : ''}. Total ${formatCurrency(total)}.`}>
           <circle className="donut-track" cx="60" cy="60" r="43" pathLength="100" />
-          {hasGroupLegend && categorySegments.map(({ category, dashOffset, visiblePercentage }) => <circle
-            className="donut-group-outline"
-            key={`outline:${category.id}`}
-            cx="60"
-            cy="60"
-            r="43"
-            pathLength="100"
-            stroke={groupColors.get(category.expenseGroupId ?? 'ungrouped') ?? '#687386'}
-            strokeDasharray={`${visiblePercentage} ${100 - visiblePercentage}`}
-            strokeDashoffset={dashOffset}
-            aria-hidden="true"
-          />)}
           {categorySegments.map(({ category, dashOffset, visiblePercentage }) => {
             const key = category.id
+            const belongsToSelectedGroup = selectedGroupId === (category.expenseGroupId ?? 'ungrouped')
             return <circle
-              className="donut-slice"
+              className={`donut-slice ${selectedGroupId ? belongsToSelectedGroup ? 'group-selected-slice' : 'group-muted-slice' : ''}`}
               key={category.id}
               cx="60"
               cy="60"
@@ -260,7 +256,7 @@ function DonutChart({
           {active && <span>{Math.round(active.percentage)}%</span>}
         </div>
       </div>
-      {hasGroupLegend && <div className="donut-group-key" aria-label="Main expense group percentages">{groups.map((group) => <span key={group.id}><i style={{ background: group.color }} aria-hidden="true" /><b>{group.name}</b><strong>{formatPercentage(group.percentage)}%</strong></span>)}</div>}
+      {hasGroupLegend && <div className="donut-group-key" aria-label="Select a main expense group">{groups.map((group) => <button className={selectedGroupId === group.id ? 'selected' : ''} key={group.id} type="button" aria-pressed={selectedGroupId === group.id} onClick={() => setSelectedGroupId((current) => current === group.id ? null : group.id)}><i style={{ background: group.color }} aria-hidden="true" /><b>{group.name}</b><strong>{formatPercentage(group.percentage)}%</strong></button>)}</div>}
     </div>
   )
 }

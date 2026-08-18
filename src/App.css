@@ -208,20 +208,21 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .donut-chart { display: block; width: 100%; height: 100%; overflow: visible; transform: rotate(-90deg); }
 .donut-track, .donut-slice { fill: none; stroke-width: 18; }
 .donut-track { stroke: rgba(23, 46, 87, .1); }
-.donut-group-outline { fill: none; stroke-width: 22; pointer-events: none; }
-.has-group-outlines .donut-slice { stroke-width: 16; }
 .donut-slice { cursor: pointer; transition: stroke-width 140ms ease, opacity 140ms ease; }
 .donut-slice:hover, .donut-slice:focus { stroke-width: 22; outline: none; }
-.has-group-outlines .donut-slice:hover, .has-group-outlines .donut-slice:focus { stroke-width: 18; }
-.donut-canvas:has(.donut-slice:hover) .donut-slice:not(:hover), .donut-canvas:has(.donut-slice:focus) .donut-slice:not(:focus) { opacity: .3; }
+.group-selected .donut-slice.group-selected-slice { stroke-width: 20; }
+.group-selected .donut-slice.group-muted-slice { opacity: .22; }
+.donut-wrap:not(.group-selected) .donut-canvas:has(.donut-slice:hover) .donut-slice:not(:hover), .donut-wrap:not(.group-selected) .donut-canvas:has(.donut-slice:focus) .donut-slice:not(:focus) { opacity: .3; }
 .donut-center { position: absolute; inset: 33px; display: grid; align-content: center; justify-items: center; min-width: 0; text-align: center; pointer-events: none; }
 .donut-center small, .donut-center span { max-width: 86px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .donut-center strong { max-width: 104px; margin: 3px 0; overflow: hidden; color: var(--navy); font: 800 15px/1.1 'Baloo 2', sans-serif; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .donut-center span { color: var(--brand-dark); font-weight: 800; }
 .donut-group-key { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 8px; font-weight: 800; }
-.donut-group-key > span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 4px 5px; border: 1px solid rgba(47, 110, 158, .25); border-radius: 999px; background: rgba(47, 110, 158, .08); }
-.donut-group-key > span:nth-child(2) { border-color: rgba(208, 107, 52, .28); background: rgba(208, 107, 52, .09); }
-.donut-group-key > span:nth-child(n+3) { border-color: rgba(104, 115, 134, .24); background: rgba(104, 115, 134, .08); }
+.donut-group-key > button { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 4px 5px; border: 1px solid rgba(47, 110, 158, .25); border-radius: 999px; color: inherit; background: rgba(47, 110, 158, .08); font: inherit; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
+.donut-group-key > button:nth-child(2) { border-color: rgba(208, 107, 52, .28); background: rgba(208, 107, 52, .09); }
+.donut-group-key > button:nth-child(n+3) { border-color: rgba(104, 115, 134, .24); background: rgba(104, 115, 134, .08); }
+.donut-group-key > button:hover, .donut-group-key > button.selected { border-color: currentColor; box-shadow: 0 2px 0 rgba(23, 46, 87, .18); transform: translateY(-1px); }
+.donut-group-key > button:focus-visible { outline: 3px solid rgba(34, 139, 34, .24); outline-offset: 2px; }
 .donut-group-key i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; }
 .donut-group-key b { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .donut-group-key strong { color: var(--navy); font-size: 9px; font-variant-numeric: tabular-nums; }
