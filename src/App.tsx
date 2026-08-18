@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
+  ArrowsOut,
   CheckCircle,
+  DownloadSimple,
   ChartLineUp,
   CloudArrowUp,
   Database,
@@ -10,6 +12,7 @@ import {
   Plus,
   Receipt,
   SignOut,
+  Trash,
   SpinnerGap,
   TrendDown,
   TrendUp,
@@ -26,6 +29,7 @@ import {
   refreshRemoteSnapshot,
   syncPendingChanges,
 } from './lib/offlineStore'
+import { captureChartImage, downloadWorkbook } from './lib/exportWorkbook'
 import { supabase } from './lib/supabase'
 import type { CategoryType, ExpenseGroup, FinancialCategory, LedgerEntry, MonthlyRecord } from './types'
 import './App.css'
@@ -96,6 +100,18 @@ const getPreviousMonthPeriod = (period: string) => {
   const month = Number(period.slice(5, 7))
   const previous = new Date(year, month - 2, 1)
   return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+// keep today's day number, but sit inside whichever month is on screen
+const defaultEntryDate = (period: string) => {
+  const today = new Date()
+  const iso = today.toISOString().slice(0, 10)
+  if (period.slice(0, 7) === iso.slice(0, 7)) return iso
+  const year = Number(period.slice(0, 4))
+  const month = Number(period.slice(5, 7))
+  const lastDay = new Date(year, month, 0).getDate()
+  const day = Math.min(today.getDate(), lastDay)
+  return `${period.slice(0, 7)}-${String(day).padStart(2, '0')}`
 }
 
 const getCurrentMonthPeriod = () => {
@@ -380,13 +396,16 @@ function EditableLedgerEntryRow({
   entry,
   saving,
   onSave,
+  onDelete,
 }: {
   entry: LedgerEntry
   saving: boolean
   onSave: (entry: LedgerEntry, amount: number, description: string) => Promise<boolean>
+  onDelete: (entry: LedgerEntry) => Promise<boolean>
 }) {
   const [amount, setAmount] = useState(String(Number(entry.amount)))
   const [description, setDescription] = useState(entry.description)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   useEffect(() => {
     setAmount(String(Number(entry.amount)))
@@ -409,6 +428,14 @@ function EditableLedgerEntryRow({
     <label className="category-entry-remark"><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What did you buy?" maxLength={200} /></label>
     <label className="category-entry-amount"><span>Amount (MYR)</span><input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
     <button className="category-entry-save" type="submit" aria-label={`Save the ${formatEntryDate(entry.entry_date)} entry`} disabled={saving || !valid || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}</button>
+    <button className="category-entry-delete" type="button" aria-label={`Delete the ${formatEntryDate(entry.entry_date)} entry`} disabled={saving} onClick={() => setConfirmingDelete(true)}><Trash aria-hidden="true" /></button>
+    {confirmingDelete && <div className="entry-delete-confirm" role="alert">
+      <p>Delete this entry? {formatCurrency(Number(entry.amount))} comes off the month's category total.</p>
+      <div>
+        <button type="button" className="compact-delete-cancel" onClick={() => setConfirmingDelete(false)}>Cancel</button>
+        <button type="button" className="compact-delete-confirm-button" disabled={saving} onClick={() => void onDelete(entry)}>Delete</button>
+      </div>
+    </div>}
   </form>
 }
 
@@ -592,7 +619,30 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
   const [offset, setOffset] = useState(0)
   const dragRef = useRef<{ x: number; offset: number } | null>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const pointersRef = useRef(new Map<number, number>())
+  const pinchRef = useRef<{ distance: number; span: number } | null>(null)
+  const [expanded, setExpanded] = useState(false)
   const total = points.length
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (expanded && !dialog.open) {
+      dialog.showModal()
+      // phones: go truly fullscreen and turn sideways where the browser allows it
+      if (window.matchMedia('(max-width: 820px)').matches) {
+        void dialog.requestFullscreen?.()
+          .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape'))
+          .catch(() => undefined)
+      }
+    }
+    if (!expanded && dialog.open) {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined)
+      ;(screen.orientation as ScreenOrientation & { unlock?: () => void }).unlock?.()
+      dialog.close()
+    }
+  }, [expanded])
 
   // React registers onWheel passively, so preventDefault there is ignored and the
   // page scrolls behind the chart. Bind it natively instead.
@@ -615,11 +665,11 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
   const visibleCount = Math.max(2, Math.min(total, span ?? total))
   const maxOffset = Math.max(0, total - visibleCount)
   const start = Math.max(0, Math.min(maxOffset, maxOffset - offset))
-  const window = points.slice(start, start + visibleCount)
-  const monthly = window.length <= YEARLY_THRESHOLD
+  const visiblePoints = points.slice(start, start + visibleCount)
+  const monthly = visiblePoints.length <= YEARLY_THRESHOLD
 
   const chartPoints: ChartPoint[] = monthly
-    ? window.map((point) => ({
+    ? visiblePoints.map((point) => ({
         key: point.period,
         label: `${formatShortMonth(point.period)} ${point.period.slice(2, 4)}`,
         income: point.income,
@@ -627,7 +677,7 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
         investments: point.investments,
         worth: point.worth,
       }))
-    : Object.values(window.reduce<Record<string, ChartPoint & { lastWorth: number | null }>>((years, point) => {
+    : Object.values(visiblePoints.reduce<Record<string, ChartPoint & { lastWorth: number | null }>>((years, point) => {
         const year = point.period.slice(0, 4)
         const bucket = years[year] ?? { key: year, label: year, income: 0, expenses: 0, investments: 0, worth: null, lastWorth: null }
         bucket.income += point.income
@@ -689,8 +739,22 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
     return Math.max(0, Math.min(chartPoints.length - 1, Math.round(ratio * (chartPoints.length - 1))))
   }
 
+  const pinchDistance = () => {
+    const [first, second] = [...pointersRef.current.values()]
+    return Math.abs(first - second)
+  }
+
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect()
+    if (pointersRef.current.has(event.pointerId)) pointersRef.current.set(event.pointerId, event.clientX)
+    if (pointersRef.current.size >= 2 && pinchRef.current) {
+      const distance = pinchDistance()
+      if (distance > 8) {
+        const next = Math.round(pinchRef.current.span * (pinchRef.current.distance / distance))
+        setSpan(Math.max(3, Math.min(total, next)))
+      }
+      return
+    }
     if (dragRef.current) {
       const movedPoints = ((dragRef.current.x - event.clientX) / bounds.width) * chartPoints.length
       const perPoint = monthly ? 1 : 12
@@ -700,13 +764,14 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
     setActiveIndex(indexFromClientX(event.clientX, bounds))
   }
 
-  return (
-    <div className="annual-chart-wrap">
+  const chartBody = (
+    <div className={`annual-chart-wrap ${expanded ? 'expanded' : ''}`}>
       <div className="chart-toolbar">
         <div className="chart-legend" aria-hidden="true">
           {flowSeries.map((series) => <span key={series.key}><i className="legend-line" style={{ background: series.color }} />{series.label}</span>)}
           <span><i className="legend-line legend-dashed" />Net worth</span>
         </div>
+        <div className="chart-tools">
         <div className="chart-range-controls" role="group" aria-label="Chart range">
           {RANGE_PRESETS.map((preset) => <button
             key={preset.label}
@@ -716,15 +781,39 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
             onClick={() => { setSpan(preset.months); setOffset(0); setActiveIndex(null) }}
           >{preset.label}</button>)}
         </div>
+        <button className="chart-expand-button" type="button" aria-label={expanded ? 'Close the enlarged chart' : 'Enlarge the chart'} onClick={() => setExpanded((current) => !current)}>
+          {expanded ? <X weight="bold" aria-hidden="true" /> : <ArrowsOut weight="bold" aria-hidden="true" />}
+        </button>
+        </div>
       </div>
       <div
         ref={viewportRef}
         className="chart-viewport"
         onPointerMove={handlePointerMove}
         onPointerLeave={() => { setActiveIndex(null); dragRef.current = null }}
-        onPointerDown={(event) => { dragRef.current = { x: event.clientX, offset } }}
-        onPointerUp={() => { dragRef.current = null }}
-        onPointerCancel={() => { dragRef.current = null }}
+        onPointerDown={(event) => {
+          event.preventDefault() // stop the drag turning into a text selection
+          event.currentTarget.setPointerCapture?.(event.pointerId)
+          pointersRef.current.set(event.pointerId, event.clientX)
+          if (pointersRef.current.size === 2) {
+            pinchRef.current = { distance: pinchDistance(), span: span ?? total }
+            dragRef.current = null
+            setActiveIndex(null)
+          } else if (pointersRef.current.size === 1) {
+            dragRef.current = { x: event.clientX, offset }
+          }
+        }}
+        onPointerUp={(event) => {
+          event.currentTarget.releasePointerCapture?.(event.pointerId)
+          pointersRef.current.delete(event.pointerId)
+          if (pointersRef.current.size < 2) pinchRef.current = null
+          dragRef.current = null
+        }}
+        onPointerCancel={(event) => {
+          pointersRef.current.delete(event.pointerId)
+          if (pointersRef.current.size < 2) pinchRef.current = null
+          dragRef.current = null
+        }}
       >
         <svg className="annual-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Income, expenses, investments and net worth, ${rangeLabel}`}>
           <text className="axis-caption" x={padding.left} y={padding.top - 16}>Money flow (RM)</text>
@@ -760,9 +849,16 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
           </>}
         </svg>
       </div>
-      <p className="chart-interaction-hint">{monthly ? 'Monthly view' : 'Yearly view'} · {rangeLabel} · scroll to zoom, drag to pan, hover for a point. Net worth uses the right axis.</p>
+      <p className="chart-interaction-hint">{monthly ? 'Monthly view' : 'Yearly view'} · {rangeLabel} · scroll or pinch to zoom, drag to pan, hover for a point. Net worth uses the right axis.</p>
     </div>
   )
+
+  return <>
+    {!expanded && chartBody}
+    <dialog className="chart-dialog" ref={dialogRef} onClose={() => setExpanded(false)} onCancel={() => setExpanded(false)}>
+      {expanded && chartBody}
+    </dialog>
+  </>
 }
 
 function YearSparkline({ points }: { points: AnnualSummary['assetTrend'] }) {
@@ -870,6 +966,7 @@ function Dashboard({ session }: { session: Session }) {
   const [categoryEditSavingId, setCategoryEditSavingId] = useState<string | null>(null)
   const [entryEditSavingId, setEntryEditSavingId] = useState<string | null>(null)
   const [expenseGroupSavingId, setExpenseGroupSavingId] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
   const [newGroupIds, setNewGroupIds] = useState<Partial<Record<CategoryType, string>>>({})
   const [newCategoryNames, setNewCategoryNames] = useState<Record<CategoryType, string>>({
     asset: '',
@@ -1304,7 +1401,7 @@ function Dashboard({ session }: { session: Session }) {
 
   async function handleSave(event: React.FormEvent) {
     event.preventDefault()
-    if (!categoryName.trim() || !description.trim() || !entryDate || !amount) return
+    if (!categoryName.trim() || !entryDate || !amount) return
     setSaving(true)
     setNotice('')
 
@@ -1353,6 +1450,7 @@ function Dashboard({ session }: { session: Session }) {
   }
 
   function openEntryForType(nextType: CategoryType) {
+    setEntryDate(defaultEntryDate(summaryPeriod))
     setType(nextType)
     setCategoryName(categories.find((category) => category.category_type === nextType)?.name ?? '')
     setAddMenuOpen(false)
@@ -1524,6 +1622,70 @@ function Dashboard({ session }: { session: Session }) {
     }
   }
 
+  async function handleExport() {
+    setExporting(true)
+    setNotice('')
+    try {
+      const chartImage = await captureChartImage()
+      await downloadWorkbook({ categories, groups: expenseGroups, records, entries, chartImage })
+      setNotice('Spreadsheet exported.')
+    } catch (error) {
+      setNotice(messageFrom(error))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function removeLedgerEntry(entry: LedgerEntry) {
+    if (!navigator.onLine) {
+      setNotice('Reconnect to delete an entry.')
+      return false
+    }
+    setEntryEditSavingId(entry.id)
+    setSyncStatus('syncing')
+    setNotice('')
+    try {
+      await syncPendingChanges(session.user.id)
+      const { error } = await supabase
+        .from('worthdelta_ledger_entries')
+        .delete()
+        .eq('id', entry.id)
+        .eq('user_id', session.user.id)
+      if (error) throw error
+
+      // the monthly total is stored separately, so take the amount off it too
+      const monthly = records.find((record) =>
+        record.period === entry.period &&
+        record.financial_categories?.category_type === entry.financial_categories?.category_type &&
+        record.financial_categories?.name.toLocaleLowerCase('en') === entry.financial_categories?.name.toLocaleLowerCase('en'),
+      )
+      if (monthly) {
+        const nextAmount = Math.max(0, Number(monthly.amount) - Number(entry.amount))
+        const { error: recordError } = await supabase
+          .from('worthdelta_monthly_records')
+          .update({ amount: nextAmount })
+          .eq('id', monthly.id)
+          .eq('user_id', session.user.id)
+        if (recordError) throw recordError
+      }
+
+      setEntries((current) => current.filter((item) => item.id !== entry.id))
+      const remote = await refreshRemoteSnapshot(session.user.id)
+      showSnapshot(remote.snapshot)
+      setPendingCount(remote.pendingCount)
+      setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
+      setLoadError('')
+      setNotice('Entry deleted.')
+      return true
+    } catch (error) {
+      setSyncStatus(navigator.onLine ? 'pending' : 'offline')
+      setNotice(messageFrom(error))
+      return false
+    } finally {
+      setEntryEditSavingId(null)
+    }
+  }
+
   async function removeCategory(category: FinancialCategory) {
     if (!navigator.onLine) {
       setNotice('Reconnect to remove a category.')
@@ -1566,6 +1728,7 @@ function Dashboard({ session }: { session: Session }) {
   }
 
   const handleDeleteCategory = (category: FinancialCategory) => keepScrollPosition(() => removeCategory(category))
+  const handleDeleteLedgerEntry = (entry: LedgerEntry) => keepScrollPosition(() => removeLedgerEntry(entry))
   const handleUpdateLedgerEntry = (entry: LedgerEntry, nextAmount: number, nextDescription: string) =>
     keepScrollPosition(() => saveLedgerEntry(entry, nextAmount, nextDescription))
   const handleUpdateCategory = (category: FinancialCategory, nextName: string, nextExpenseGroupId: string | null) =>
@@ -1685,6 +1848,10 @@ function Dashboard({ session }: { session: Session }) {
             </article>
           })}
         </section>
+        <section className="panel export-panel" aria-labelledby="export-title">
+          <div><p className="eyebrow">Spreadsheet</p><h2 id="export-title">Export to Excel</h2><p>One sheet per year with your months as live formulas — each cell keeps its parts, like <code>=12.5+30+8</code> — plus totals, worth change, savings rate and a snapshot of the annual chart.</p></div>
+          <button className="primary-action-button" type="button" onClick={() => void handleExport()} disabled={exporting || records.length === 0}>{exporting ? <SpinnerGap className="spin" aria-hidden="true" /> : <DownloadSimple aria-hidden="true" />}{exporting ? 'Building…' : 'Download .xlsx'}</button>
+        </section>
         </>}
 
         {view === 'records' && <>
@@ -1712,7 +1879,7 @@ function Dashboard({ session }: { session: Session }) {
                 {ungroupedTypeCategories.length > 0 && <optgroup label="Unassigned">{ungroupedTypeCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</optgroup>}
               </> : filteredCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label>
               {filteredCategories.length === 0 && <a className="dialog-settings-link" href="#settings" onClick={() => setEntryDialogOpen(false)}><GearSix aria-hidden="true" />Open category settings</a>}
-              <label><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What makes up this amount?" maxLength={200} required /></label>
+              <label><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What did you buy?" maxLength={200} /></label>
               <div className="form-row"><label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} required /></label><label><span>Amount (MYR)</span><input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></label></div>
               <div className="entry-dialog-actions"><button className="dialog-cancel-button" type="button" onClick={() => setEntryDialogOpen(false)}>Cancel</button><button className="primary-action-button" type="submit" disabled={saving || !!loadError || filteredCategories.length === 0}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}Save entry</button></div>
             </form>
@@ -1723,7 +1890,7 @@ function Dashboard({ session }: { session: Session }) {
           {selectedCategoryEntries && selectedCategorySummary && <div className="entry-dialog-card category-entries-card">
             <header className="entry-dialog-heading"><div><p className="eyebrow">{categoryMeta[selectedCategoryEntries.type].label} · {formatMonth(selectedCategoryEntries.period)}</p><h2 id="category-entries-title">{selectedCategorySummary.name}</h2><p>{categoryLedgerEntries.length} {categoryLedgerEntries.length === 1 ? 'entry' : 'entries'} · {formatCurrency(selectedCategorySummary.amount)} category total</p></div><button type="button" onClick={() => setSelectedCategoryEntries(null)} aria-label="Close category entries"><X aria-hidden="true" /></button></header>
             <div className={`entry-type-badge ${selectedCategoryEntries.type}`}><SelectedCategoryIcon weight="duotone" aria-hidden="true" /><span>Amount and remark details</span></div>
-            {categoryLedgerEntries.length === 0 ? <div className="category-entry-empty"><Receipt aria-hidden="true" /><strong>No itemised entries for this month</strong><p>The category total exists, but no amount-and-remark breakdown is available.</p></div> : <div className="category-entry-list">{categoryLedgerEntries.map((entry) => <EditableLedgerEntryRow key={entry.id} entry={entry} saving={entryEditSavingId === entry.id} onSave={handleUpdateLedgerEntry} />)}</div>}
+            {categoryLedgerEntries.length === 0 ? <div className="category-entry-empty"><Receipt aria-hidden="true" /><strong>No itemised entries for this month</strong><p>The category total exists, but no amount-and-remark breakdown is available.</p></div> : <div className="category-entry-list">{categoryLedgerEntries.map((entry) => <EditableLedgerEntryRow key={entry.id} entry={entry} saving={entryEditSavingId === entry.id} onSave={handleUpdateLedgerEntry} onDelete={handleDeleteLedgerEntry} />)}</div>}
           </div>}
         </dialog>
       </main>
