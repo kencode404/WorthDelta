@@ -250,6 +250,12 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .chart-empty, .loading-state { display: grid; place-items: center; min-height: 270px; color: var(--muted); font-size: 14px; }
 .loading-state { display: flex; gap: 10px; }
 .add-panel form { margin-top: 24px; }
+.amount-field { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 7px; }
+.amount-field select { min-width: 0; padding: 0 6px 0 10px; font-size: 13px; font-weight: 700; letter-spacing: .02em; }
+.repeat-field { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; }
+.repeat-field select { min-height: 40px; font-size: 13px; }
+.rate-hint { margin: -6px 0 0; color: var(--brand-dark); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rate-hint.stale { color: #8a6a12; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .record-toolbar { width: fit-content; margin-bottom: 18px; padding: 16px 18px; background: #f4fbf1; }
 .record-period-controls { display: flex; align-items: end; gap: 10px; }
@@ -567,8 +573,22 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .category-edit-popover { position: fixed; top: 50%; right: 18px; left: 18px; width: auto; transform: translateY(-50%); }
   .category-edit-popover::before { display: none; }
   .entry-dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); }
-  .entry-dialog-card { padding: 20px; }
-  .entry-dialog-heading h2 { font-size: 25px; }
+  .entry-dialog-card { padding: 15px 16px; border-radius: 20px; }
+  .entry-dialog-heading { margin-bottom: 12px; }
+  .entry-dialog-heading h2 { font-size: 20px; }
+  .entry-dialog-heading > button { width: 38px; height: 38px; border-radius: 11px; }
+  .entry-dialog form { gap: 9px; }
+  .entry-dialog label { gap: 4px; font-size: 11px; }
+  .entry-dialog input, .entry-dialog select { min-height: 38px; padding: 0 10px; border-radius: 11px; font-size: 14px; }
+  .entry-dialog .amount-field { grid-template-columns: 70px minmax(0, 1fr); gap: 6px; }
+  .entry-dialog .amount-field select { font-size: 12px; }
+  .entry-dialog .form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .entry-dialog .entry-type-badge { min-height: 38px; padding: 0 12px; font-size: 12px; }
+  .entry-dialog .entry-dialog-actions { grid-template-columns: minmax(88px, .45fr) minmax(0, 1fr); gap: 9px; margin-top: 1px; }
+  .entry-dialog .primary-action-button, .entry-dialog .dialog-cancel-button { min-height: 42px; font-size: 12px; }
+  .rate-hint { font-size: 10px; }
+  .entry-dialog .repeat-field { gap: 10px; }
+  .entry-dialog .repeat-field select { min-height: 34px; font-size: 12px; }
   .entry-dialog-actions { grid-template-columns: 1fr; }
   .category-entry-row { grid-template-columns: minmax(0, 1fr) 42px; }
   .category-entry-meta, .category-entry-remark { grid-column: 1 / -1; }

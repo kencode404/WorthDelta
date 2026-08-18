@@ -114,6 +114,13 @@ const defaultEntryDate = (period: string) => {
   return `${period.slice(0, 7)}-${String(day).padStart(2, '0')}`
 }
 
+const addMonths = (date: string, count: number) => {
+  const day = Number(date.slice(8, 10))
+  const target = new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1 + count, 1)
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
+  return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`
+}
+
 const getCurrentMonthPeriod = () => {
   const today = new Date()
   const month = String(today.getMonth() + 1).padStart(2, '0')
@@ -164,6 +171,29 @@ interface DonutGroupBreakdown {
 
 const chartColors = ['#228b22', '#2f6e9e', '#c46a3a', '#8064a2', '#c24d57', '#b08720', '#41827a', '#667085']
 const expenseGroupColors = ['#2f6e9e', '#d06b34', '#8064a2', '#687386']
+const rateCacheKey = (code: string) => `worthdelta-rate-${code}`
+
+const readCachedRate = (code: string) => {
+  try {
+    const raw = window.localStorage.getItem(rateCacheKey(code))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { rate: number; at: string }
+    return typeof parsed.rate === 'number' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+const writeCachedRate = (code: string, rate: number) => {
+  try {
+    window.localStorage.setItem(rateCacheKey(code), JSON.stringify({ rate, at: new Date().toISOString() }))
+  } catch {
+    // a full or blocked store just means no offline fallback next time
+  }
+}
+
+const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP', 'JPY', 'AUD', 'CNY', 'HKD', 'THB', 'IDR', 'PHP', 'VND', 'KRW', 'TWD', 'INR', 'CAD', 'CHF', 'NZD', 'AED']
+
 const monthOptions = Array.from({ length: 12 }, (_, index) => {
   const value = String(index + 1).padStart(2, '0')
   return {
@@ -1013,6 +1043,12 @@ function Dashboard({ session }: { session: Session }) {
   const [description, setDescription] = useState('')
   const [recordPeriod, setRecordPeriod] = useState(getCurrentMonthPeriod)
   const [entryDialogOpen, setEntryDialogOpen] = useState(false)
+  const [repeatMonths, setRepeatMonths] = useState(1)
+  const [currency, setCurrency] = useState('MYR')
+  const [rate, setRate] = useState<number | null>(null)
+  const [rateStamp, setRateStamp] = useState<string | null>(null)
+  const [rateLive, setRateLive] = useState(false)
+  const [rateLoading, setRateLoading] = useState(false)
   const [selectedCategoryEntries, setSelectedCategoryEntries] = useState<{ type: CategoryType; category: CategoryBreakdown; period: string } | null>(null)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -1134,6 +1170,38 @@ function Dashboard({ session }: { session: Session }) {
     })
     return months.size
   }
+
+  // last known rate first so the field works offline, then refresh it if we can
+  useEffect(() => {
+    if (currency === 'MYR') {
+      setRate(null)
+      setRateStamp(null)
+      setRateLive(false)
+      return
+    }
+    const cached = readCachedRate(currency)
+    setRate(cached?.rate ?? null)
+    setRateStamp(cached?.at ?? null)
+    setRateLive(false)
+    if (!navigator.onLine) return
+
+    let cancelled = false
+    setRateLoading(true)
+    fetch(`https://open.er-api.com/v6/latest/${currency}`)
+      .then((response) => response.json())
+      .then((payload) => {
+        if (cancelled) return
+        const value = payload?.rates?.MYR
+        if (typeof value !== 'number') throw new Error('No MYR rate for this currency.')
+        writeCachedRate(currency, value)
+        setRate(value)
+        setRateStamp(new Date().toISOString())
+        setRateLive(true)
+      })
+      .catch(() => undefined) // the cached or manual rate still stands
+      .finally(() => { if (!cancelled) setRateLoading(false) })
+    return () => { cancelled = true }
+  }, [currency])
 
   const showSnapshot = useCallback((snapshot: { expense_groups: ExpenseGroup[]; categories: FinancialCategory[]; records: MonthlyRecord[]; entries: LedgerEntry[] }) => {
     setExpenseGroups(snapshot.expense_groups)
@@ -1456,24 +1524,42 @@ function Dashboard({ session }: { session: Session }) {
   async function handleSave(event: React.FormEvent) {
     event.preventDefault()
     if (!categoryName.trim() || !entryDate || !amount) return
+    const entered = Number(amount)
+    const foreign = currency !== 'MYR'
+    // a stale or missing rate still saves; syncPendingChanges converts it properly
+    const needsRate = foreign && !rateLive
+    const ringgit = foreign ? Number((entered * (rate ?? 0)).toFixed(2)) : entered
+    const remark = [description.trim(), currency === 'MYR' ? '' : `(${currency} ${entered.toFixed(2)})`]
+      .filter(Boolean)
+      .join(' ')
     setSaving(true)
     setNotice('')
 
     try {
-      const queued = await queueLedgerEntry({
-        userId: session.user.id,
-        categoryType: type,
-        categoryName,
-        categorySortOrder: categories.length + 1,
-        period: `${entryDate.slice(0, 7)}-01`,
-        entryDate,
-        amount: Number(amount),
-        description,
-      })
+      let queued
+      for (let index = 0; index < repeatMonths; index += 1) {
+        const date = addMonths(entryDate, index)
+        queued = await queueLedgerEntry({
+          userId: session.user.id,
+          categoryType: type,
+          categoryName,
+          categorySortOrder: categories.length + 1,
+          period: `${date.slice(0, 7)}-01`,
+          entryDate: date,
+          amount: ringgit,
+          description: remark,
+          currency: foreign ? currency : null,
+          originalAmount: foreign ? entered : null,
+          needsRate,
+        })
+      }
+      if (!queued) return
       showSnapshot(queued.snapshot)
       setPendingCount(queued.pendingCount)
       setAmount('')
       setDescription('')
+      setRepeatMonths(1)
+      setCurrency('MYR')
       setEntryDialogOpen(false)
 
       if (!navigator.onLine) {
@@ -1489,7 +1575,7 @@ function Dashboard({ session }: { session: Session }) {
       setPendingCount(remote.pendingCount)
       setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
       setLoadError('')
-      setNotice('Detailed entry saved and synced.')
+      setNotice(repeatMonths > 1 ? `Saved across ${repeatMonths} months and synced.` : 'Entry saved and synced.')
     } catch (error) {
       const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
       setPendingCount(queued)
@@ -1504,6 +1590,8 @@ function Dashboard({ session }: { session: Session }) {
   }
 
   function openEntryForType(nextType: CategoryType) {
+    setRepeatMonths(1)
+    setCurrency('MYR')
     setEntryDate(defaultEntryDate(summaryPeriod))
     setType(nextType)
     setCategoryName(categories.find((category) => category.category_type === nextType)?.name ?? '')
@@ -1925,7 +2013,7 @@ function Dashboard({ session }: { session: Session }) {
 
         <dialog className="entry-dialog" ref={entryDialogRef} aria-labelledby="entry-dialog-title" onClose={() => setEntryDialogOpen(false)} onCancel={() => setEntryDialogOpen(false)} onClick={(event) => { if (event.target === event.currentTarget) setEntryDialogOpen(false) }}>
           <div className="entry-dialog-card">
-            <header className="entry-dialog-heading"><div><p className="eyebrow">New record</p><h2 id="entry-dialog-title">Add a new entry</h2><p>Every entry updates its monthly category total.</p></div><button type="button" onClick={() => setEntryDialogOpen(false)} aria-label="Close add entry form"><X aria-hidden="true" /></button></header>
+            <header className="entry-dialog-heading"><div><h2 id="entry-dialog-title">Add a new entry</h2></div><button type="button" onClick={() => setEntryDialogOpen(false)} aria-label="Close add entry form"><X aria-hidden="true" /></button></header>
             <form onSubmit={handleSave}>
               <div className={`entry-type-badge ${type}`}><EntryTypeIcon weight="duotone" aria-hidden="true" /><span>{categoryMeta[type].label}</span></div>
               <label><span>Category</span><select value={categoryName} onChange={(event) => setCategoryName(event.target.value)} required><option value="" disabled>{filteredCategories.length ? 'Choose a category' : 'Add a category in Settings first'}</option>{typeGroupList.length > 0 ? <>
@@ -1934,7 +2022,15 @@ function Dashboard({ session }: { session: Session }) {
               </> : filteredCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label>
               {filteredCategories.length === 0 && <a className="dialog-settings-link" href="#settings" onClick={() => setEntryDialogOpen(false)}><GearSix aria-hidden="true" />Open category settings</a>}
               <label><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What did you buy?" maxLength={200} /></label>
-              <div className="form-row"><label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} required /></label><label><span>Amount (MYR)</span><input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></label></div>
+              <div className="form-row"><label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} required /></label><label><span>Amount</span><div className="amount-field"><select value={currency} onChange={(event) => setCurrency(event.target.value)} aria-label="Currency">{CURRENCIES.map((code) => <option key={code} value={code}>{code}</option>)}</select><input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div></label></div>
+              {currency !== 'MYR' && <p className={`rate-hint ${rate && !rateLive ? 'stale' : ''}`} role="status">{rateLoading && !rate
+                ? 'Fetching today’s rate…'
+                : !rate
+                  ? `Saved in ${currency} — it converts to MYR on the next sync.`
+                  : rateLive
+                    ? `${formatCurrency(Number(amount || 0) * rate)} at 1 ${currency} = ${rate.toFixed(4)} MYR`
+                    : `About ${formatCurrency(Number(amount || 0) * rate)} at ${rateStamp ? formatEntryDate(rateStamp) : 'an older'} rate — reconverted on sync.`}</p>}
+              <label className="repeat-field"><span>Repeat</span><select value={repeatMonths} onChange={(event) => setRepeatMonths(Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => index + 1).map((months) => <option key={months} value={months}>{months === 1 ? 'This month only' : `${months} months — through ${formatMonth(`${addMonths(entryDate, months - 1).slice(0, 7)}-01`)}`}</option>)}</select></label>
               <div className="entry-dialog-actions"><button className="dialog-cancel-button" type="button" onClick={() => setEntryDialogOpen(false)}>Cancel</button><button className="primary-action-button" type="submit" disabled={saving || !!loadError || filteredCategories.length === 0}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}Save entry</button></div>
             </form>
           </div>

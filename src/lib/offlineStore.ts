@@ -70,6 +70,10 @@ interface PendingEntryMutation {
   source_cell: string | null
   source_formula: string | null
   external_key: string | null
+  /** set when the entry was keyed in a foreign currency while offline */
+  currency: string | null
+  original_amount: number | null
+  needs_rate: boolean
   updated_at: number
 }
 
@@ -102,6 +106,9 @@ interface QueueEntryInput extends QueueRecordInput {
   sourceCell?: string | null
   sourceFormula?: string | null
   externalKey?: string | null
+  currency?: string | null
+  originalAmount?: number | null
+  needsRate?: boolean
 }
 
 let databasePromise: Promise<IDBDatabase> | undefined
@@ -363,6 +370,9 @@ function createEntryMutation(snapshot: OfflineSnapshot, input: QueueEntryInput):
     source_cell: input.sourceCell ?? null,
     source_formula: input.sourceFormula ?? null,
     external_key: externalKey,
+    currency: input.currency ?? null,
+    original_amount: input.originalAmount ?? null,
+    needs_rate: input.needsRate ?? false,
     updated_at: Date.now(),
   }
 }
@@ -622,6 +632,37 @@ export async function syncPendingChanges(userId: string) {
       })
     if (error) throw error
   }
+  const awaitingRate = entryMutations.filter((mutation) => mutation.needs_rate && mutation.currency)
+  if (awaitingRate.length > 0) {
+    const rates = new Map<string, number>()
+    for (const code of new Set(awaitingRate.map((mutation) => mutation.currency as string))) {
+      try {
+        const response = await fetch(`https://open.er-api.com/v6/latest/${code}`)
+        const payload = await response.json()
+        const value = payload?.rates?.MYR
+        if (typeof value !== 'number') throw new Error('missing rate')
+        rates.set(code, value)
+      } catch {
+        throw new Error(`Could not get today's ${code} rate, so ${awaitingRate.length === 1 ? 'that entry stays' : 'those entries stay'} queued. They will convert on the next sync.`)
+      }
+    }
+    awaitingRate.forEach((mutation) => {
+      const rate = rates.get(mutation.currency as string)
+      if (!rate) return
+      const converted = Number(((mutation.original_amount ?? 0) * rate).toFixed(2))
+      const difference = converted - mutation.amount
+      mutation.amount = converted
+      mutation.needs_rate = false
+      // the month's category total was queued with the estimate, so move it by the gap
+      const record = recordMutations.find((item) =>
+        item.period === mutation.period &&
+        item.category_type === mutation.category_type &&
+        normalizedName(item.category_name) === normalizedName(mutation.category_name),
+      )
+      if (record) record.amount = Number((record.amount + difference).toFixed(2))
+    })
+  }
+
   const entryRows = entryMutations.map((mutation) => ({
     id: mutation.id,
     user_id: mutation.user_id,
