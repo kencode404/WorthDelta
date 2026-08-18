@@ -159,8 +159,12 @@ function emptySnapshot(userId: string): OfflineSnapshot {
 
 function normalizeSnapshot(snapshot: OfflineSnapshot): OfflineSnapshot {
   snapshot.expense_groups ??= []
+  snapshot.expense_groups.forEach((group) => { group.category_type ??= 'expense' })
   snapshot.entries ??= []
-  snapshot.categories.forEach((category) => { category.expense_group_id ??= null })
+  snapshot.categories.forEach((category) => {
+    category.expense_group_id ??= null
+    category.archived_at ??= null
+  })
   return snapshot
 }
 
@@ -585,7 +589,7 @@ export async function syncPendingChanges(userId: string) {
         category_type: mutation.category_type,
         name: mutation.category_name,
         sort_order: mutation.category_sort_order,
-        expense_group_id: mutation.category_type === 'expense' ? mutation.expense_group_id : null,
+        expense_group_id: mutation.category_type === 'expense' || mutation.category_type === 'asset' ? mutation.expense_group_id : null,
       })),
       { onConflict: 'user_id,category_type,name' },
     )
@@ -692,7 +696,7 @@ export async function refreshRemoteSnapshot(userId: string) {
   if (categoryResult.error) throw categoryResult.error
   const snapshot: OfflineSnapshot = {
     user_id: userId,
-    expense_groups: groupResult.data as ExpenseGroup[],
+    expense_groups: (groupResult.data as ExpenseGroup[]).map((group) => ({ ...group, category_type: group.category_type ?? 'expense' })),
     categories: categoryResult.data as FinancialCategory[],
     records: remoteRecords,
     entries: remoteEntries,

@@ -5,6 +5,8 @@ export interface ExpenseGroup {
   user_id: string
   name: string
   sort_order: number
+  /** 'expense' groups are planned/unplanned; 'asset' groups are current/non-current */
+  category_type: 'expense' | 'asset'
 }
 
 export interface FinancialCategory {
@@ -14,6 +16,8 @@ export interface FinancialCategory {
   name: string
   sort_order: number
   expense_group_id: string | null
+  /** set when the category is retired but still has history worth keeping */
+  archived_at?: string | null
 }
 
 export interface MonthlyRecord {
