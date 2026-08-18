@@ -1,7 +1,7 @@
 -- Main groups now cover assets as well as expenses, so asset categories can be
 -- split into current and non-current. Liquidity = total assets - non-current.
 -- The table keeps its worthdelta_expense_groups name to avoid re-pointing the
--- existing foreign key; category_type is what separates the two sets.
+-- existing foreign key. category_type is what separates the two sets.
 
 begin;
 
@@ -59,7 +59,7 @@ where category.user_id = asset_group.user_id
   and category.category_type = 'asset'
   and category.expense_group_id is null;
 
--- expenses still require a group; assets may have one; income and investments
+-- expenses still require a group. assets may have one. income and investments
 -- must not. Assets stay permissive so an unassigned one is never a hard error.
 alter table public.worthdelta_financial_categories
   add constraint worthdelta_financial_categories_expense_group_check

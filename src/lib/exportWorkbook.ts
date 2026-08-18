@@ -39,13 +39,15 @@ const sameName = (a?: string | null, b?: string | null) =>
 /**
  * One cell holds the whole month for a category, as the source sheet does:
  * several amounts stay visible as `=12.5+30+8`, a single amount stays a number.
+ * Whatever those amounts were for rides along as a cell note, the same way the
+ * original spreadsheet carried a note per cell.
  */
-function cellValue(
+function cellContent(
   category: FinancialCategory,
   period: string,
   records: MonthlyRecord[],
   entries: LedgerEntry[],
-) {
+): { value: number | { formula: string } | null; note: string | null } {
   const own = entries.filter((entry) =>
     entry.period === period &&
     (entry.category_id === category.id || (
@@ -53,15 +55,22 @@ function cellValue(
       sameName(entry.financial_categories?.name, category.name)
     )),
   )
+  const remarks = own.filter((entry) => entry.description?.trim())
+  const note = remarks.length === 0
+    ? null
+    : remarks.length === 1 && own.length === 1
+      ? remarks[0].description.trim()
+      : remarks.map((entry) => `${Number(entry.amount).toFixed(2)} — ${entry.description.trim()}`).join(String.fromCharCode(10))
+
   if (own.length > 1) {
     const parts = own
       .map((entry) => Number(entry.amount))
       .filter((amount) => amount !== 0)
       .map((amount) => String(Number(amount.toFixed(2))))
-    if (parts.length > 1) return { formula: parts.join('+') }
-    if (parts.length === 1) return Number(parts[0])
+    if (parts.length > 1) return { value: { formula: parts.join('+') }, note }
+    if (parts.length === 1) return { value: Number(parts[0]), note }
   }
-  if (own.length === 1) return Number(Number(own[0].amount).toFixed(2))
+  if (own.length === 1) return { value: Number(Number(own[0].amount).toFixed(2)), note }
 
   const record = records.find((item) =>
     item.period === period &&
@@ -70,9 +79,9 @@ function cellValue(
       sameName(item.financial_categories?.name, category.name)
     )),
   )
-  if (!record) return null
+  if (!record) return { value: null, note }
   const amount = Number(record.amount)
-  return amount === 0 ? null : Number(amount.toFixed(2))
+  return { value: amount === 0 ? null : Number(amount.toFixed(2)), note }
 }
 
 export async function downloadWorkbook(input: ExportInput) {
@@ -141,8 +150,9 @@ export async function downloadWorkbook(input: ExportInput) {
 
         MONTHS.forEach((_, monthIndex) => {
           const cell = row.getCell(FIRST_MONTH_COL + monthIndex)
-          const value = cellValue(category, periodFor(year, monthIndex), input.records, input.entries)
+          const { value, note } = cellContent(category, periodFor(year, monthIndex), input.records, input.entries)
           if (value !== null) cell.value = value as never
+          if (note) cell.note = { texts: [{ text: note }], margins: { insetmode: 'auto' } }
           cell.numFmt = MONEY_FORMAT
         })
 

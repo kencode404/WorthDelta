@@ -160,11 +160,29 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .chart-expand-button { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 2px solid var(--line); border-radius: 11px; color: var(--navy); background: #fff; cursor: pointer; }
 .chart-expand-button:hover { border-color: var(--brand); color: var(--brand-dark); background: var(--brand-soft); }
 .chart-expand-button svg { width: 17px; height: 17px; }
-.chart-dialog { width: min(1680px, 96vw); max-width: none; height: 92dvh; padding: 20px 22px; border: 3px solid var(--panel-border); border-radius: 24px; color: var(--ink); background: var(--surface); }
+.chart-dialog { width: min(1680px, 96vw); max-width: none; height: 92dvh; padding: 20px 22px; overflow: hidden; border: 3px solid var(--panel-border); border-radius: 24px; color: var(--ink); background: var(--surface); }
 .chart-dialog::backdrop { background: rgba(13, 29, 57, .55); }
 .chart-dialog:not([open]) { display: none; }
+@media (max-width: 820px) {
+  .chart-dialog { width: 100vw; max-width: none; height: 100dvh; max-height: none; padding: 10px; border-width: 0; border-radius: 0; }
+  .annual-chart-wrap.expanded .chart-toolbar { flex-wrap: nowrap; gap: 8px; }
+  .annual-chart-wrap.expanded .chart-legend { flex-wrap: wrap; gap: 2px 9px; min-width: 0; font-size: 10px; }
+  .annual-chart-wrap.expanded .chart-legend i { width: 9px; height: 9px; }
+  .annual-chart-wrap.expanded .chart-tools { flex: 0 0 auto; gap: 6px; }
+  .annual-chart-wrap.expanded .chart-range-controls { padding: 2px; }
+  .annual-chart-wrap.expanded .chart-range-controls button { min-width: 32px; min-height: 26px; padding: 0 7px; font-size: 10px; }
+  .annual-chart-wrap.expanded .chart-expand-button { width: 28px; height: 28px; }
+  .annual-chart-wrap.expanded .chart-interaction-hint { margin-top: 4px; font-size: 9px; line-height: 1.3; }
+}
+/* iOS has no orientation lock, so when the phone is still portrait the enlarged
+   chart is rotated instead. Once the device does turn, this stops matching. */
+@media (max-width: 820px) and (orientation: portrait) {
+  .chart-dialog { overflow: hidden; padding: 0; }
+  .chart-dialog .annual-chart-wrap.expanded { position: fixed; top: 0; left: 0; width: 100dvh; height: 100vw; padding: 10px 14px; transform: rotate(90deg) translateY(-100vw); transform-origin: 0 0; }
+}
 .annual-chart-wrap.expanded { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; gap: 12px; }
-.annual-chart-wrap.expanded .chart-viewport { min-height: 0; }
+.annual-chart-wrap.expanded .chart-viewport { min-height: 0; overflow: hidden; }
+.annual-chart-wrap.expanded .annual-chart { min-width: 0; }
 .annual-chart-wrap.expanded .annual-chart { height: 100%; max-height: 100%; }
 .chart-viewport { touch-action: pan-y; cursor: crosshair; user-select: none; -webkit-user-select: none; }
 .chart-viewport:active { cursor: grabbing; }
@@ -272,7 +290,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .donut-group-key i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; }
 .donut-group-key b { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .donut-group-key strong { color: var(--navy); font-size: 9px; font-variant-numeric: tabular-nums; }
-.category-breakdown-list { min-width: 0; max-height: 230px; overflow-y: auto; padding-right: 7px; }
+.category-breakdown-list { min-width: 0; height: 280px; overflow-y: auto; padding-right: 7px; }
 .category-breakdown-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 52px; border-bottom: 1px solid rgba(23, 46, 87, .1); }
 .category-breakdown-row:last-child { border-bottom: 0; }
 .category-breakdown-button { width: 100%; padding: 0 5px; border: 0; border-bottom: 1px solid rgba(23, 46, 87, .1); border-radius: 8px; color: inherit; background: transparent; font: inherit; text-align: left; transition: background-color 140ms ease, box-shadow 140ms ease; }
@@ -287,7 +305,6 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .category-breakdown-value strong, .category-breakdown-value small { display: block; font-variant-numeric: tabular-nums; }
 .category-breakdown-value strong { color: var(--ink); font-size: 12px; }
 .category-breakdown-value small { margin-top: 3px; color: var(--muted); font-size: 10px; }
-.expense-breakdown-list { max-height: 280px; }
 .expense-breakdown-group { padding: 7px 9px; border-left: 4px solid #2f6e9e; border-radius: 10px; background: rgba(47, 110, 158, .08); }
 .expense-breakdown-group:nth-child(2) { border-left-color: #d06b34; background: rgba(208, 107, 52, .09); }
 .expense-breakdown-group:nth-child(n+3) { border-left-color: #687386; background: rgba(104, 115, 134, .09); }
