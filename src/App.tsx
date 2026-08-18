@@ -621,7 +621,7 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const pointersRef = useRef(new Map<number, number>())
-  const pinchRef = useRef<{ distance: number; span: number } | null>(null)
+  const pinchRef = useRef<{ distance: number; midpoint: number; span: number; offset: number } | null>(null)
   const [expanded, setExpanded] = useState(false)
   const total = points.length
 
@@ -739,26 +739,39 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
     return Math.max(0, Math.min(chartPoints.length - 1, Math.round(ratio * (chartPoints.length - 1))))
   }
 
-  const pinchDistance = () => {
+  const twoFingers = () => {
     const [first, second] = [...pointersRef.current.values()]
-    return Math.abs(first - second)
+    return { distance: Math.abs(first - second), midpoint: (first + second) / 2 }
+  }
+
+  const panBy = (pixels: number, width: number, fromOffset: number) => {
+    const movedPoints = (pixels / width) * chartPoints.length
+    const perPoint = monthly ? 1 : 12
+    setOffset(Math.max(0, Math.min(maxOffset, Math.round(fromOffset - movedPoints * perPoint))))
   }
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect()
     if (pointersRef.current.has(event.pointerId)) pointersRef.current.set(event.pointerId, event.clientX)
+
+    // two fingers: spread to zoom, slide to pan
     if (pointersRef.current.size >= 2 && pinchRef.current) {
-      const distance = pinchDistance()
+      const { distance, midpoint } = twoFingers()
       if (distance > 8) {
         const next = Math.round(pinchRef.current.span * (pinchRef.current.distance / distance))
         setSpan(Math.max(3, Math.min(total, next)))
       }
+      panBy(pinchRef.current.midpoint - midpoint, bounds.width, pinchRef.current.offset)
+      return
+    }
+
+    // one finger reads values, the way a price chart scrubs; a mouse drag pans
+    if (event.pointerType === 'touch') {
+      setActiveIndex(indexFromClientX(event.clientX, bounds))
       return
     }
     if (dragRef.current) {
-      const movedPoints = ((dragRef.current.x - event.clientX) / bounds.width) * chartPoints.length
-      const perPoint = monthly ? 1 : 12
-      setOffset(Math.max(0, Math.min(maxOffset, Math.round(dragRef.current.offset - movedPoints * perPoint))))
+      panBy(dragRef.current.x - event.clientX, bounds.width, dragRef.current.offset)
       return
     }
     setActiveIndex(indexFromClientX(event.clientX, bounds))
@@ -796,11 +809,16 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
           event.currentTarget.setPointerCapture?.(event.pointerId)
           pointersRef.current.set(event.pointerId, event.clientX)
           if (pointersRef.current.size === 2) {
-            pinchRef.current = { distance: pinchDistance(), span: span ?? total }
+            pinchRef.current = { ...twoFingers(), span: span ?? total, offset }
             dragRef.current = null
             setActiveIndex(null)
           } else if (pointersRef.current.size === 1) {
-            dragRef.current = { x: event.clientX, offset }
+            if (event.pointerType === 'touch') {
+              // show the point straight away, without needing a drag first
+              setActiveIndex(indexFromClientX(event.clientX, event.currentTarget.getBoundingClientRect()))
+            } else {
+              dragRef.current = { x: event.clientX, offset }
+            }
           }
         }}
         onPointerUp={(event) => {
