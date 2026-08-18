@@ -182,12 +182,21 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .annual-chart-wrap.expanded .chart-interaction-hint { margin-top: 2px; font-size: 9px; line-height: 1.25; }
   .annual-chart-wrap.expanded .chart-viewport { touch-action: none; }
 }
-.annual-chart-wrap.expanded { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; gap: 12px; }
+.annual-chart-wrap.expanded { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; gap: 12px; }
 .annual-chart-wrap.expanded .chart-viewport { min-height: 0; overflow: hidden; }
 .annual-chart-wrap.expanded .annual-chart { min-width: 0; }
 .annual-chart-wrap.expanded .annual-chart { height: 100%; max-height: 100%; }
-.chart-viewport { touch-action: pan-y; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+.chart-viewport { min-width: 0; max-width: 100%; touch-action: pan-y; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+.chart-frame { position: relative; min-width: 0; max-width: 100%; }
+.axis-overlay { position: absolute; top: 0; display: none; pointer-events: none; }
+.axis-overlay span, .axis-overlay b { position: absolute; display: block; color: var(--muted); font-size: 9px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; transform: translateY(-50%); white-space: nowrap; }
+.axis-overlay b { color: var(--navy); font-size: 8px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.axis-overlay.left { left: 0; background: linear-gradient(90deg, var(--surface) 74%, transparent); text-align: right; }
+.axis-overlay.left span, .axis-overlay.left b { right: 5px; }
+.axis-overlay.right { right: 0; background: linear-gradient(270deg, var(--surface) 74%, transparent); }
+.axis-overlay.right span, .axis-overlay.right b { left: 5px; color: var(--navy); }
 @media (max-width: 620px) {
+  .axis-overlay { display: block; }
   .chart-viewport { overflow-x: auto; overflow-y: hidden; touch-action: pan-x pan-y; scrollbar-width: thin; scrollbar-color: rgba(23, 46, 87, .3) transparent; }
   .chart-viewport::-webkit-scrollbar { height: 4px; }
   .chart-viewport::-webkit-scrollbar-track { background: transparent; }

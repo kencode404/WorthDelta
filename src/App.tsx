@@ -677,7 +677,8 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
     if (!node || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(([entry]) => {
       const next = Math.round(entry.contentRect.width)
-      if (next > 0) setBoxWidth(next)
+      // ignore sub-pixel churn, which would otherwise re-render on every frame
+      if (next > 0) setBoxWidth((current) => Math.abs(current - next) > 2 ? next : current)
     })
     observer.observe(node)
     return () => observer.disconnect()
@@ -907,6 +908,7 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
         </button>
         </div>
       </div>
+      <div className="chart-frame">
       <div
         ref={viewportRef}
         className={`chart-viewport ${holding ? 'panning' : ''}`}
@@ -955,15 +957,15 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
           endHold()
         }}
       >
-        <svg ref={svgRef} className={`annual-chart ${compact ? 'compact' : ''}`} width={scrollable ? width : undefined} height={scrollable ? height : undefined} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Income, expenses, investments and net worth, ${rangeLabel}`}>
-          <text className="axis-caption" x={padding.left} y={padding.top - 16}>Money flow (RM)</text>
-          <text className="axis-caption axis-caption-worth" x={width - padding.right} y={padding.top - 16} textAnchor="end">Net worth (RM)</text>
+        <svg ref={svgRef} className={`annual-chart ${compact ? 'compact' : ''}`} style={scrollable ? { width: `${width}px`, height: `${height}px`, maxWidth: 'none', flex: '0 0 auto' } : undefined} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Income, expenses, investments and net worth, ${rangeLabel}`}>
+          {!scrollable && <text className="axis-caption" x={padding.left} y={padding.top - 16}>Money flow (RM)</text>}
+          {!scrollable && <text className="axis-caption axis-caption-worth" x={width - padding.right} y={padding.top - 16} textAnchor="end">Net worth (RM)</text>}
           {[0, .25, .5, .75, 1].map((line) => {
             const gridY = base - line * plotHeight
             return <g key={line}>
               <line x1={padding.left} y1={gridY} x2={width - padding.right} y2={gridY} stroke="#e2e8ee" strokeWidth="1" />
-              <text x={padding.left - 12} y={gridY + 4} textAnchor="end">{Math.round((flowMax * line) / 1000)}k</text>
-              <text className="axis-worth-tick" x={width - padding.right + 12} y={gridY + 4}>{Math.round((worthMax * line) / 1000)}k</text>
+              {!scrollable && <text x={padding.left - 12} y={gridY + 4} textAnchor="end">{Math.round((flowMax * line) / 1000)}k</text>}
+              {!scrollable && <text className="axis-worth-tick" x={width - padding.right + 12} y={gridY + 4}>{Math.round((worthMax * line) / 1000)}k</text>}
             </g>
           })}
           <path className="income-area" d={`${flowPath('income')} L ${xFor(chartPoints.length - 1)} ${base} L ${xFor(0)} ${base} Z`} />
@@ -988,6 +990,17 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
             </g>
           </>}
         </svg>
+      </div>
+      {scrollable && <>
+        <div className="axis-overlay left" style={{ height: `${height}px`, width: `${padding.left}px` }} aria-hidden="true">
+          <b style={{ top: `${padding.top - 16}px` }}>RM</b>
+          {[0, .25, .5, .75, 1].map((line) => <span key={line} style={{ top: `${base - line * plotHeight}px` }}>{Math.round((flowMax * line) / 1000)}k</span>)}
+        </div>
+        <div className="axis-overlay right" style={{ height: `${height}px`, width: `${padding.right}px` }} aria-hidden="true">
+          <b style={{ top: `${padding.top - 16}px` }}>worth</b>
+          {[0, .25, .5, .75, 1].map((line) => <span key={line} style={{ top: `${base - line * plotHeight}px` }}>{Math.round((worthMax * line) / 1000)}k</span>)}
+        </div>
+      </>}
       </div>
       <p className="chart-interaction-hint">{monthly ? 'Monthly view' : 'Yearly view'} · {rangeLabel} · scroll or pinch to zoom, hold and drag to pan, tap or hover for a point. Net worth uses the right axis.</p>
     </div>
