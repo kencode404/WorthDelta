@@ -182,18 +182,13 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .annual-chart-wrap.expanded .chart-interaction-hint { margin-top: 2px; font-size: 9px; line-height: 1.25; }
   .annual-chart-wrap.expanded .chart-viewport { touch-action: none; }
 }
-/* iOS has no orientation lock, so when the phone is still portrait the enlarged
-   chart is rotated instead. Once the device does turn, this stops matching. */
-@media (max-width: 820px) and (orientation: portrait) {
-  .chart-dialog { overflow: hidden; padding: 0; }
-  .chart-dialog .annual-chart-wrap.expanded { position: fixed; top: 0; left: 0; width: 100vh; width: 100svh; height: 100vw; padding: 8px 12px; transform: rotate(90deg) translateY(-100vw); transform-origin: 0 0; }
-}
 .annual-chart-wrap.expanded { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; gap: 12px; }
 .annual-chart-wrap.expanded .chart-viewport { min-height: 0; overflow: hidden; }
 .annual-chart-wrap.expanded .annual-chart { min-width: 0; }
 .annual-chart-wrap.expanded .annual-chart { height: 100%; max-height: 100%; }
 .chart-viewport { touch-action: pan-y; cursor: crosshair; user-select: none; -webkit-user-select: none; }
 .chart-viewport:active { cursor: grabbing; }
+.chart-viewport.panning { background: rgba(34, 139, 34, .05); border-radius: 12px; }
 .chart-viewport svg, .chart-viewport text { user-select: none; -webkit-user-select: none; }
 .active-dot { fill: #fffefa; stroke-width: 3; }
 .active-worth-dot { fill: #172e57; stroke: #fffefa; stroke-width: 2.5; }

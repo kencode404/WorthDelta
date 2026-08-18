@@ -654,6 +654,18 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const pointersRef = useRef(new Map<number, number>())
   const pinchRef = useRef<{ distance: number; midpoint: number; span: number; offset: number } | null>(null)
+  const holdTimerRef = useRef<number | null>(null)
+  const holdRef = useRef<{ x: number; offset: number } | null>(null)
+  const touchStartRef = useRef<number | null>(null)
+  const [holding, setHolding] = useState(false)
+
+  const endHold = () => {
+    if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current)
+    holdTimerRef.current = null
+    holdRef.current = null
+    touchStartRef.current = null
+    setHolding(false)
+  }
   const [expanded, setExpanded] = useState(false)
   const [boxWidth, setBoxWidth] = useState(1080)
   const total = points.length
@@ -830,8 +842,17 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
       return
     }
 
-    // one finger reads values, the way a price chart scrubs; a mouse drag pans
+    // one finger reads values, the way a price chart scrubs; hold still for a
+    // moment and the same finger switches to panning
     if (event.pointerType === 'touch') {
+      if (holdRef.current) {
+        panBy(holdRef.current.x - x, holdRef.current.offset)
+        return
+      }
+      if (touchStartRef.current !== null && Math.abs(x - touchStartRef.current) > 6 && holdTimerRef.current !== null) {
+        window.clearTimeout(holdTimerRef.current)
+        holdTimerRef.current = null
+      }
       setActiveIndex(indexFromLocalX(x))
       return
     }
@@ -866,9 +887,9 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
       </div>
       <div
         ref={viewportRef}
-        className="chart-viewport"
+        className={`chart-viewport ${holding ? 'panning' : ''}`}
         onPointerMove={handlePointerMove}
-        onPointerLeave={() => { setActiveIndex(null); dragRef.current = null }}
+        onPointerLeave={() => { setActiveIndex(null); dragRef.current = null; endHold() }}
         onPointerDown={(event) => {
           event.preventDefault() // stop the drag turning into a text selection
           event.currentTarget.setPointerCapture?.(event.pointerId)
@@ -883,6 +904,15 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
             if (event.pointerType === 'touch') {
               // show the point straight away, without needing a drag first
               setActiveIndex(indexFromLocalX(x))
+              touchStartRef.current = x
+              const startOffset = offset
+              holdTimerRef.current = window.setTimeout(() => {
+                holdRef.current = { x, offset: startOffset }
+                holdTimerRef.current = null
+                setHolding(true)
+                setActiveIndex(null)
+                navigator.vibrate?.(12)
+              }, 320)
             } else {
               dragRef.current = { x, offset }
             }
@@ -893,11 +923,13 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
           pointersRef.current.delete(event.pointerId)
           if (pointersRef.current.size < 2) pinchRef.current = null
           dragRef.current = null
+          endHold()
         }}
         onPointerCancel={(event) => {
           pointersRef.current.delete(event.pointerId)
           if (pointersRef.current.size < 2) pinchRef.current = null
           dragRef.current = null
+          endHold()
         }}
       >
         <svg ref={svgRef} className={`annual-chart ${compact ? 'compact' : ''}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Income, expenses, investments and net worth, ${rangeLabel}`}>
@@ -934,7 +966,7 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
           </>}
         </svg>
       </div>
-      <p className="chart-interaction-hint">{monthly ? 'Monthly view' : 'Yearly view'} · {rangeLabel} · scroll or pinch to zoom, drag to pan, hover for a point. Net worth uses the right axis.</p>
+      <p className="chart-interaction-hint">{monthly ? 'Monthly view' : 'Yearly view'} · {rangeLabel} · scroll or pinch to zoom, hold and drag to pan, tap or hover for a point. Net worth uses the right axis.</p>
     </div>
   )
 
