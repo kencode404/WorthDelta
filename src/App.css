@@ -187,6 +187,13 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .annual-chart-wrap.expanded .annual-chart { min-width: 0; }
 .annual-chart-wrap.expanded .annual-chart { height: 100%; max-height: 100%; }
 .chart-viewport { touch-action: pan-y; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+@media (max-width: 620px) {
+  .chart-viewport { overflow-x: auto; overflow-y: hidden; touch-action: pan-x pan-y; scrollbar-width: thin; scrollbar-color: rgba(23, 46, 87, .3) transparent; }
+  .chart-viewport::-webkit-scrollbar { height: 4px; }
+  .chart-viewport::-webkit-scrollbar-track { background: transparent; }
+  .chart-viewport::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(23, 46, 87, .3); }
+  .annual-chart-wrap.expanded .chart-viewport { overflow-x: auto; touch-action: pan-x pan-y; }
+}
 .chart-viewport:active { cursor: grabbing; }
 .chart-viewport.panning { background: rgba(34, 139, 34, .05); border-radius: 12px; }
 .chart-viewport svg, .chart-viewport text { user-select: none; -webkit-user-select: none; }

@@ -688,11 +688,16 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
     if (!dialog) return
     if (expanded && !dialog.open) {
       dialog.showModal()
-      // phones: go truly fullscreen and turn sideways where the browser allows it
+      // phones: turn sideways where the platform allows it. Android grants the lock
+      // in fullscreen or in an installed PWA; iOS has no such API and simply stays
+      // portrait. Rotating the device itself is what keeps taps and panning correct,
+      // which a CSS rotation did not.
       if (window.matchMedia('(max-width: 820px)').matches) {
-        void dialog.requestFullscreen?.()
-          .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape'))
-          .catch(() => undefined)
+        const orientation = screen.orientation as ScreenOrientation & { lock?: (value: string) => Promise<void> }
+        const lockLandscape = () => { void orientation?.lock?.('landscape').catch(() => undefined) }
+        const fullscreen = dialog.requestFullscreen?.()
+        if (fullscreen) fullscreen.then(lockLandscape).catch(lockLandscape)
+        else lockLandscape()
       }
     }
     if (!expanded && dialog.open) {
@@ -720,11 +725,15 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
   }, [total])
 
   if (points.length === 0) return <div className="chart-empty">Your progress will appear once records are added.</div>
+  const containerWidth = Math.max(300, boxWidth)
+  const scrollable = containerWidth < 620
   const visibleCount = Math.max(2, Math.min(total, span ?? total))
   const maxOffset = Math.max(0, total - visibleCount)
   const start = Math.max(0, Math.min(maxOffset, maxOffset - offset))
-  const visiblePoints = points.slice(start, start + visibleCount)
-  const monthly = visiblePoints.length <= YEARLY_THRESHOLD
+  const visiblePoints = scrollable ? points : points.slice(start, start + visibleCount)
+  const monthly = scrollable
+    ? (containerWidth * (total / visibleCount)) / Math.max(1, total - 1) >= 16
+    : visiblePoints.length <= YEARLY_THRESHOLD
 
   const chartPoints: ChartPoint[] = monthly
     ? visiblePoints.map((point) => ({
@@ -747,8 +756,9 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
         return years
       }, {}))
 
-  const width = Math.max(300, boxWidth)
-  const compact = width < 620
+  // on a phone the drawing is as wide as the zoom asks for and the viewport scrolls
+  const width = scrollable ? Math.round(containerWidth * Math.max(1, total / visibleCount)) : containerWidth
+  const compact = scrollable
   const padding = compact
     ? { top: 26, right: 44, bottom: 30, left: 44 }
     : { top: 38, right: 72, bottom: 46, left: 70 }
@@ -845,6 +855,10 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
     // one finger reads values, the way a price chart scrubs; hold still for a
     // moment and the same finger switches to panning
     if (event.pointerType === 'touch') {
+      if (scrollable) {
+        setActiveIndex(indexFromLocalX(x))
+        return
+      }
       if (holdRef.current) {
         panBy(holdRef.current.x - x, holdRef.current.offset)
         return
@@ -877,7 +891,15 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
             type="button"
             className={(span ?? total) === (preset.months ?? total) ? 'active' : ''}
             aria-pressed={(span ?? total) === (preset.months ?? total)}
-            onClick={() => { setSpan(preset.months); setOffset(0); setActiveIndex(null) }}
+            onClick={() => {
+              setSpan(preset.months)
+              setOffset(0)
+              setActiveIndex(null)
+              if (scrollable) requestAnimationFrame(() => {
+                const node = viewportRef.current
+                if (node) node.scrollLeft = node.scrollWidth
+              })
+            }}
           >{preset.label}</button>)}
         </div>
         <button className="chart-expand-button" type="button" aria-label={expanded ? 'Close the enlarged chart' : 'Enlarge the chart'} onClick={() => setExpanded((current) => !current)}>
@@ -904,6 +926,7 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
             if (event.pointerType === 'touch') {
               // show the point straight away, without needing a drag first
               setActiveIndex(indexFromLocalX(x))
+              if (scrollable) return
               touchStartRef.current = x
               const startOffset = offset
               holdTimerRef.current = window.setTimeout(() => {
@@ -932,7 +955,7 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
           endHold()
         }}
       >
-        <svg ref={svgRef} className={`annual-chart ${compact ? 'compact' : ''}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Income, expenses, investments and net worth, ${rangeLabel}`}>
+        <svg ref={svgRef} className={`annual-chart ${compact ? 'compact' : ''}`} width={scrollable ? width : undefined} height={scrollable ? height : undefined} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Income, expenses, investments and net worth, ${rangeLabel}`}>
           <text className="axis-caption" x={padding.left} y={padding.top - 16}>Money flow (RM)</text>
           <text className="axis-caption axis-caption-worth" x={width - padding.right} y={padding.top - 16} textAnchor="end">Net worth (RM)</text>
           {[0, .25, .5, .75, 1].map((line) => {
