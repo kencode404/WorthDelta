@@ -396,7 +396,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 @keyframes live-glow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.55) saturate(1.25); } }
 .metric-grid .change-pill { display: inline-block; margin-left: 6px; font-size: 10px; vertical-align: middle; }
 .liquid-indicator-figure { display: grid; justify-items: start; min-width: 0; }
-.liquid-indicator { position: fixed; bottom: 28px; left: calc(280px + clamp(24px, 3vw, 44px)); z-index: 28; display: flex; align-items: center; gap: 13px; max-width: min(340px, calc(100vw - 140px)); padding: 13px 19px 13px 15px; border: 3px solid #5f9f74; border-radius: 22px; background: #eff9f1; box-shadow: 0 6px 0 rgba(64, 121, 79, .22), 0 16px 32px rgba(23, 46, 87, .12); }
+.liquid-indicator { position: fixed; bottom: 28px; left: calc(280px + 12px); z-index: 28; display: flex; align-items: center; gap: 13px; max-width: min(340px, calc(100vw - 140px)); padding: 13px 19px 13px 15px; border: 3px solid #5f9f74; border-radius: 22px; background: #eff9f1; box-shadow: 0 6px 0 rgba(64, 121, 79, .22), 0 16px 32px rgba(23, 46, 87, .12); }
 .liquid-indicator.ongoing { border-color: #c9a13a; background: #fffaea; box-shadow: 0 6px 0 rgba(163, 128, 33, .2), 0 16px 32px rgba(23, 46, 87, .12); }
 .liquid-indicator.projected { border-color: #7f93ad; background: #f3f7fd; box-shadow: 0 6px 0 rgba(94, 116, 145, .2), 0 16px 32px rgba(23, 46, 87, .12); }
 .liquid-indicator-icon { display: grid; flex: 0 0 auto; place-items: center; width: 40px; height: 40px; border: 2px solid #4f8a63; border-radius: 13px; color: #2c6b41; background: #dcf0e1; }
