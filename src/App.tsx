@@ -31,7 +31,7 @@ import type { CategoryType, ExpenseGroup, FinancialCategory, LedgerEntry, Monthl
 import './App.css'
 
 const categoryMeta: Record<CategoryType, { label: string; icon: typeof Wallet }> = {
-  asset: { label: 'Assets', icon: Wallet },
+  asset: { label: 'Initial Assets', icon: Wallet },
   income: { label: 'Income', icon: TrendUp },
   investment: { label: 'Investments', icon: ChartLineUp },
   expense: { label: 'Expenses', icon: TrendDown },
@@ -44,6 +44,8 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value)
 
+const changeLabel = (value: number) => `${value < 0 ? '−' : '+'}${Math.abs(value).toFixed(1)}%`
+
 const formatPercentage = (value: number) =>
   value.toFixed(value > 0 && value < 1 ? 1 : 0)
 
@@ -52,10 +54,49 @@ const formatMonth = (period: string) =>
     new Date(`${period.slice(0, 7)}-02T00:00:00`),
   )
 
+const formatShortMonth = (period: string) =>
+  new Intl.DateTimeFormat('en-MY', { month: 'short' }).format(new Date(`${period.slice(0, 7)}-02T00:00:00`))
+
 const formatEntryDate = (date: string) =>
   new Intl.DateTimeFormat('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }).format(
     new Date(`${date.slice(0, 10)}T00:00:00`),
   )
+
+const smoothPath = (points: Array<{ x: number; y: number }>) => {
+  if (points.length < 2) return points.length ? `M ${points[0].x} ${points[0].y}` : ''
+  const deltas = points.slice(0, -1).map((point, index) => (points[index + 1].y - point.y) / (points[index + 1].x - point.x))
+  const slopes = points.map((_, index) => {
+    if (index === 0) return deltas[0]
+    if (index === points.length - 1) return deltas[deltas.length - 1]
+    return deltas[index - 1] * deltas[index] <= 0 ? 0 : (deltas[index - 1] + deltas[index]) / 2
+  })
+  // Fritsch-Carlson limiter: keeps the curve monotone so it never bulges past a real value
+  deltas.forEach((delta, index) => {
+    if (delta === 0) {
+      slopes[index] = 0
+      slopes[index + 1] = 0
+      return
+    }
+    const magnitude = Math.hypot(slopes[index] / delta, slopes[index + 1] / delta)
+    if (magnitude > 3) {
+      slopes[index] = (3 / magnitude) * (slopes[index] / delta) * delta
+      slopes[index + 1] = (3 / magnitude) * (slopes[index + 1] / delta) * delta
+    }
+  })
+  return points.map((point, index) => {
+    if (index === 0) return `M ${point.x} ${point.y}`
+    const previous = points[index - 1]
+    const step = (point.x - previous.x) / 3
+    return `C ${previous.x + step} ${previous.y + slopes[index - 1] * step} ${point.x - step} ${point.y - slopes[index] * step} ${point.x} ${point.y}`
+  }).join(' ')
+}
+
+const getPreviousMonthPeriod = (period: string) => {
+  const year = Number(period.slice(0, 4))
+  const month = Number(period.slice(5, 7))
+  const previous = new Date(year, month - 2, 1)
+  return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}-01`
+}
 
 const getCurrentMonthPeriod = () => {
   const today = new Date()
@@ -81,6 +122,7 @@ interface AnnualSummary {
   investments: number
   netWorth: number
   netWorthChange: number
+  netWorthChangePercent: number | null
   monthsTracked: number
   savingsRate: number
   assetTrend: Array<{ period: string; value: number }>
@@ -93,6 +135,7 @@ interface CategoryBreakdown {
   percentage: number
   color: string
   expenseGroupId: string | null
+  archived?: boolean
 }
 
 interface DonutGroupBreakdown {
@@ -283,7 +326,7 @@ function RecordSectionCard({
     <span className="category-breakdown-name"><strong>{category.name}</strong><span className="category-progress" aria-hidden="true"><i style={{ width: `${category.percentage}%`, background: category.color }} /></span></span>
     <span className="category-breakdown-value"><strong>{formatCurrency(category.amount)}</strong><small>{category.percentage.toFixed(category.percentage > 0 && category.percentage < 1 ? 1 : 0)}%</small></span>
   </button>
-  const groupedExpenses = type === 'expense'
+  const groupedCategories = expenseGroups.length > 0
     ? [
         ...expenseGroups.map((group, index) => ({
           id: group.id,
@@ -299,7 +342,14 @@ function RecordSectionCard({
         },
       ].filter((group) => group.categories.length > 0)
     : []
-  const donutGroups: DonutGroupBreakdown[] = groupedExpenses.map((group) => {
+  // liquidity = everything except the non-current groups (any asset group after the first)
+  const nonCurrentTotal = type === 'asset'
+    ? categories
+        .filter((category) => expenseGroups.slice(1).some((group) => group.id === category.expenseGroupId))
+        .reduce((sum, category) => sum + category.amount, 0)
+    : 0
+  const showLiquidity = type === 'asset' && expenseGroups.length > 1 && total > 0
+  const donutGroups: DonutGroupBreakdown[] = groupedCategories.map((group) => {
     const amount = group.categories.reduce((sum, category) => sum + category.amount, 0)
     return { ...group, amount, percentage: total > 0 ? (amount / total) * 100 : 0 }
   })
@@ -311,9 +361,12 @@ function RecordSectionCard({
         <div><p>{meta.label}</p><strong>{formatCurrency(total)}</strong><small>{formatMonth(period)}</small></div>
       </header>
       <div className="record-section-body">
-        <DonutChart label={meta.label} total={total} categories={categories} groups={type === 'expense' ? donutGroups : undefined} />
-        {categories.length === 0 ? <div className="category-empty"><p>No {meta.label.toLocaleLowerCase('en')} categories yet.</p><a href="#settings">Add categories in Settings</a></div> : type === 'expense' ? <div className="category-breakdown-list expense-breakdown-list">
-          {groupedExpenses.map((group) => <section className="expense-breakdown-group" key={group.id}>
+        <div className="record-donut-column">
+          <DonutChart label={meta.label} total={total} categories={categories} groups={donutGroups.length > 0 ? donutGroups : undefined} />
+          {showLiquidity && <p className="liquidity-readout"><span>Liquidity</span><strong>{formatCurrency(total - nonCurrentTotal)}</strong></p>}
+        </div>
+        {categories.length === 0 ? <div className="category-empty"><p>No {meta.label.toLocaleLowerCase('en')} categories yet.</p><a href="#settings">Add categories in Settings</a></div> : groupedCategories.length > 0 ? <div className="category-breakdown-list expense-breakdown-list">
+          {groupedCategories.map((group) => <section className="expense-breakdown-group" key={group.id}>
             <header><strong>{group.name}</strong><span>{formatCurrency(group.categories.reduce((sum, category) => sum + category.amount, 0))}</span></header>
             {group.categories.map(categoryRow)}
           </section>)}
@@ -342,11 +395,8 @@ function EditableLedgerEntryRow({
 
   const numericAmount = Number(amount)
   const trimmedDescription = description.trim()
-  const valid = amount.trim() !== '' && Number.isFinite(numericAmount) && numericAmount >= 0 && !!trimmedDescription
+  const valid = amount.trim() !== '' && Number.isFinite(numericAmount) && numericAmount >= 0
   const unchanged = numericAmount === Number(entry.amount) && trimmedDescription === entry.description
-  const source = entry.source_type === 'google_sheets'
-    ? [entry.source_sheet, entry.source_cell].filter(Boolean).join(' · ') || 'Imported entry'
-    : 'Manual entry'
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -355,10 +405,10 @@ function EditableLedgerEntryRow({
   }
 
   return <form className="category-entry-row" onSubmit={(event) => void handleSubmit(event)}>
-    <div className="category-entry-meta"><strong>{formatEntryDate(entry.entry_date)}</strong><small>{source}</small></div>
-    <label className="category-entry-remark"><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={200} required /></label>
+    <div className="category-entry-meta"><strong>{formatEntryDate(entry.entry_date)}</strong></div>
+    <label className="category-entry-remark"><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What did you buy?" maxLength={200} /></label>
     <label className="category-entry-amount"><span>Amount (MYR)</span><input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
-    <button className="category-entry-save" type="submit" aria-label={`Save ${entry.description}`} disabled={saving || !valid || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}</button>
+    <button className="category-entry-save" type="submit" aria-label={`Save the ${formatEntryDate(entry.entry_date)} entry`} disabled={saving || !valid || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}</button>
   </form>
 }
 
@@ -425,13 +475,19 @@ function CategoryEditor({
   expenseGroups,
   saving,
   onSave,
+  onDelete,
+  historyMonths,
 }: {
   category: FinancialCategory
   expenseGroups: ExpenseGroup[]
   saving: boolean
   onSave: (name: string, expenseGroupId: string | null) => Promise<boolean>
+  onDelete: () => Promise<boolean>
+  historyMonths: number
 }) {
+  const keepsHistory = historyMonths > 0
   const [open, setOpen] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [name, setName] = useState(category.name)
   const [expenseGroupId, setExpenseGroupId] = useState(category.expense_group_id ?? '')
   const containerRef = useRef<HTMLDivElement>(null)
@@ -458,11 +514,12 @@ function CategoryEditor({
       window.removeEventListener('keydown', handleEscape)
     }
   }, [open])
+  useEffect(() => { if (!open) setConfirmingDelete(false) }, [open])
 
   const trimmedName = name.trim()
-  const nextExpenseGroupId = category.category_type === 'expense' ? expenseGroupId : null
+  const nextExpenseGroupId = expenseGroups.length > 0 ? expenseGroupId : null
   const unchanged = trimmedName === category.name && nextExpenseGroupId === category.expense_group_id
-  const missingExpenseGroup = category.category_type === 'expense' && !expenseGroupId
+  const missingExpenseGroup = expenseGroups.length > 0 && !expenseGroupId
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -483,123 +540,308 @@ function CategoryEditor({
         <input ref={inputRef} value={name} onChange={(event) => setName(event.target.value)} aria-label={`Category name: ${category.name}`} maxLength={80} required />
         <button className="compact-save-button" type="submit" aria-label={`Save ${category.name}`} disabled={saving || !trimmedName || missingExpenseGroup || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}</button>
       </div>
-      {category.category_type === 'expense' && <label className="compact-group-select"><span>Main group</span><select value={expenseGroupId} onChange={(event) => setExpenseGroupId(event.target.value)} required>
+      {expenseGroups.length > 0 && <label className="compact-group-select"><span>Main group</span><select value={expenseGroupId} onChange={(event) => setExpenseGroupId(event.target.value)} required>
         <option value="" disabled>Choose group</option>
         {expenseGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
       </select></label>}
+      {confirmingDelete
+        ? <div className={`compact-delete-confirm ${keepsHistory ? 'warning' : ''}`} role="alert">
+            <p>{keepsHistory
+              ? `Recorded in ${historyMonths} past ${historyMonths === 1 ? 'month' : 'months'}. Those amounts stay put — the category is archived, not deleted, and stops appearing for new entries.`
+              : 'No amounts recorded against this category. It will be removed completely.'}</p>
+            <div>
+              <button type="button" className="compact-delete-cancel" onClick={() => setConfirmingDelete(false)}>Cancel</button>
+              <button type="button" className="compact-delete-confirm-button" disabled={saving} onClick={() => void onDelete().then((done) => { if (done) setOpen(false) })}>{keepsHistory ? 'Archive' : 'Delete'}</button>
+            </div>
+          </div>
+        : <button type="button" className="compact-delete-button" onClick={() => setConfirmingDelete(true)}>{keepsHistory ? 'Archive category' : 'Delete category'}</button>}
     </form>}
   </div>
 }
 
-function AnnualChart({ years }: { years: AnnualSummary[] }) {
-  const [activeYear, setActiveYear] = useState<number | null>(null)
+interface MonthlyPoint {
+  period: string
+  income: number
+  expenses: number
+  investments: number
+  worth: number | null
+}
 
-  if (years.length === 0) return <div className="chart-empty">Your annual progress will appear once records are added.</div>
+interface ChartPoint {
+  key: string
+  label: string
+  income: number
+  expenses: number
+  investments: number
+  worth: number | null
+}
+
+const RANGE_PRESETS = [
+  { label: '1Y', months: 12 },
+  { label: '3Y', months: 36 },
+  { label: '5Y', months: 60 },
+  { label: 'All', months: null },
+]
+
+// beyond this many months on screen the monthly detail turns to mush, so roll up to years
+const YEARLY_THRESHOLD = 36
+
+function AnnualChart({ points }: { points: MonthlyPoint[] }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+  const [span, setSpan] = useState<number | null>(null)
+  const [offset, setOffset] = useState(0)
+  const dragRef = useRef<{ x: number; offset: number } | null>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const total = points.length
+
+  // React registers onWheel passively, so preventDefault there is ignored and the
+  // page scrolls behind the chart. Bind it natively instead.
+  useEffect(() => {
+    const node = viewportRef.current
+    if (!node) return
+    const handleWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) < 1) return
+      event.preventDefault()
+      setSpan((current) => {
+        const next = Math.round((current ?? total) * (event.deltaY > 0 ? 1.25 : 0.8))
+        return Math.max(3, Math.min(total, next))
+      })
+    }
+    node.addEventListener('wheel', handleWheel, { passive: false })
+    return () => node.removeEventListener('wheel', handleWheel)
+  }, [total])
+
+  if (points.length === 0) return <div className="chart-empty">Your progress will appear once records are added.</div>
+  const visibleCount = Math.max(2, Math.min(total, span ?? total))
+  const maxOffset = Math.max(0, total - visibleCount)
+  const start = Math.max(0, Math.min(maxOffset, maxOffset - offset))
+  const window = points.slice(start, start + visibleCount)
+  const monthly = window.length <= YEARLY_THRESHOLD
+
+  const chartPoints: ChartPoint[] = monthly
+    ? window.map((point) => ({
+        key: point.period,
+        label: `${formatShortMonth(point.period)} ${point.period.slice(2, 4)}`,
+        income: point.income,
+        expenses: point.expenses,
+        investments: point.investments,
+        worth: point.worth,
+      }))
+    : Object.values(window.reduce<Record<string, ChartPoint & { lastWorth: number | null }>>((years, point) => {
+        const year = point.period.slice(0, 4)
+        const bucket = years[year] ?? { key: year, label: year, income: 0, expenses: 0, investments: 0, worth: null, lastWorth: null }
+        bucket.income += point.income
+        bucket.expenses += point.expenses
+        bucket.investments += point.investments
+        if (point.worth !== null) bucket.lastWorth = point.worth
+        bucket.worth = bucket.lastWorth
+        years[year] = bucket
+        return years
+      }, {}))
 
   const width = 1080
-  const height = 390
-  const padding = { top: 28, right: 72, bottom: 58, left: 72 }
+  const padding = { top: 38, right: 72, bottom: 46, left: 70 }
+  const plotHeight = 296
+  const height = padding.top + plotHeight + padding.bottom
   const plotWidth = width - padding.left - padding.right
-  const plotHeight = height - padding.top - padding.bottom
-  const barMax = Math.max(...years.flatMap((year) => [year.income, year.expenses, year.investments]), 1)
-  const worthMax = Math.max(...years.map((year) => year.netWorth), 1)
-  const groupWidth = plotWidth / years.length
-  const barWidth = Math.min(26, groupWidth / 5)
-  const yBar = (value: number) => padding.top + plotHeight - (value / barMax) * plotHeight
-  const yWorth = (value: number) => padding.top + plotHeight - (value / worthMax) * plotHeight
-  const worthPoints = years.map((year, index) => ({
-    x: padding.left + groupWidth * index + groupWidth / 2,
-    y: yWorth(year.netWorth),
-    year,
-  }))
-  const worthPath = worthPoints.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ')
-  const gridLines = [0, .25, .5, .75, 1]
-  const barSeries = [
-    { key: 'income' as const, label: 'Income', color: '#218a70' },
-    { key: 'expenses' as const, label: 'Expenses', color: '#d85f63' },
-    { key: 'investments' as const, label: 'Invested', color: '#477fc6' },
+  const base = padding.top + plotHeight
+
+  const flowMax = Math.max(...chartPoints.flatMap((point) => [point.income, point.expenses, point.investments]), 1)
+  const worthValues = chartPoints.map((point) => point.worth).filter((value): value is number => value !== null)
+  const worthMax = Math.max(...worthValues, 1)
+  const step = chartPoints.length > 1 ? plotWidth / (chartPoints.length - 1) : 0
+  const xFor = (index: number) => chartPoints.length > 1 ? padding.left + index * step : padding.left + plotWidth / 2
+  const yFlow = (value: number) => base - (value / flowMax) * plotHeight
+  const yWorth = (value: number) => base - (value / worthMax) * plotHeight
+
+  const flowSeries = [
+    { key: 'income' as const, label: 'Income', color: '#218a70', area: true },
+    { key: 'expenses' as const, label: 'Expenses', color: '#c25a1f', area: false },
+    { key: 'investments' as const, label: 'Invested', color: '#477fc6', area: false },
   ]
-  const activeSummary = years.find((year) => year.year === activeYear)
-  const activeIndex = activeSummary ? years.indexOf(activeSummary) : -1
-  const activeCenter = activeIndex >= 0 ? padding.left + groupWidth * activeIndex + groupWidth / 2 : 0
-  const tooltipWidth = 236
-  const tooltipX = Math.max(padding.left, Math.min(activeCenter - tooltipWidth / 2, width - padding.right - tooltipWidth))
-  const yearLabel = (year: AnnualSummary) => `${year.year}: Income ${formatCurrency(year.income)}, expenses ${formatCurrency(year.expenses)}, invested ${formatCurrency(year.investments)}, net worth ${formatCurrency(year.netWorth)}`
+  const flowPath = (key: 'income' | 'expenses' | 'investments') =>
+    smoothPath(chartPoints.map((point, index) => ({ x: xFor(index), y: yFlow(point[key]) })))
+
+  // the worth line breaks wherever a month has no asset snapshot
+  const worthSegments: Array<Array<{ x: number; y: number }>> = []
+  chartPoints.forEach((point, index) => {
+    if (point.worth === null) {
+      if (worthSegments.at(-1)?.length) worthSegments.push([])
+      return
+    }
+    if (worthSegments.length === 0) worthSegments.push([])
+    worthSegments[worthSegments.length - 1].push({ x: xFor(index), y: yWorth(point.worth) })
+  })
+
+  const active = activeIndex === null ? null : chartPoints[Math.min(activeIndex, chartPoints.length - 1)]
+  const activeX = active ? xFor(Math.min(activeIndex!, chartPoints.length - 1)) : 0
+  const tooltipWidth = 214
+  const tooltipHeight = active?.worth === null ? 104 : 126
+  const tooltipX = Math.max(padding.left, Math.min(activeX + 16, width - padding.right - tooltipWidth))
+
+  const labelEvery = Math.max(1, Math.ceil(chartPoints.length / 8))
+  const rangeLabel = `${chartPoints[0]?.label ?? ''} – ${chartPoints.at(-1)?.label ?? ''}`
+
+  const indexFromClientX = (clientX: number, bounds: DOMRect) => {
+    if (bounds.width === 0 || chartPoints.length < 2) return 0
+    const viewX = ((clientX - bounds.left) / bounds.width) * width
+    const ratio = (viewX - padding.left) / plotWidth
+    return Math.max(0, Math.min(chartPoints.length - 1, Math.round(ratio * (chartPoints.length - 1))))
+  }
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect()
+    if (dragRef.current) {
+      const movedPoints = ((dragRef.current.x - event.clientX) / bounds.width) * chartPoints.length
+      const perPoint = monthly ? 1 : 12
+      setOffset(Math.max(0, Math.min(maxOffset, Math.round(dragRef.current.offset - movedPoints * perPoint))))
+      return
+    }
+    setActiveIndex(indexFromClientX(event.clientX, bounds))
+  }
 
   return (
     <div className="annual-chart-wrap">
-      <div className="chart-legend" aria-hidden="true">
-        {barSeries.map((series) => <span key={series.key}><i style={{ background: series.color }} />{series.label}</span>)}
-        <span><i className="legend-line" />Net worth</span>
+      <div className="chart-toolbar">
+        <div className="chart-legend" aria-hidden="true">
+          {flowSeries.map((series) => <span key={series.key}><i className="legend-line" style={{ background: series.color }} />{series.label}</span>)}
+          <span><i className="legend-line legend-dashed" />Net worth</span>
+        </div>
+        <div className="chart-range-controls" role="group" aria-label="Chart range">
+          {RANGE_PRESETS.map((preset) => <button
+            key={preset.label}
+            type="button"
+            className={(span ?? total) === (preset.months ?? total) ? 'active' : ''}
+            aria-pressed={(span ?? total) === (preset.months ?? total)}
+            onClick={() => { setSpan(preset.months); setOffset(0); setActiveIndex(null) }}
+          >{preset.label}</button>)}
+        </div>
       </div>
-      <svg className="annual-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Annual income, expenses, investments, and net worth from ${years[0].year} to ${years.at(-1)!.year}`}>
-        {gridLines.map((line) => {
-          const y = padding.top + plotHeight - line * plotHeight
-          return <g key={line}><line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#dfe7e2" strokeWidth="1" /><text x={padding.left - 12} y={y + 4} textAnchor="end">{Math.round((barMax * line) / 1000)}k</text><text x={width - padding.right + 12} y={y + 4}>{Math.round((worthMax * line) / 1000)}k</text></g>
-        })}
-        {years.map((year, yearIndex) => {
-          const center = padding.left + groupWidth * yearIndex + groupWidth / 2
-          return <g key={year.year}>{barSeries.map((series, seriesIndex) => {
-            const value = year[series.key]
-            const x = center + (seriesIndex - 1) * (barWidth + 3) - barWidth / 2
-            const y = yBar(value)
-            return <rect key={series.key} x={x} y={y} width={barWidth} height={padding.top + plotHeight - y} rx="3" fill={series.color}><title>{year.year} {series.label}: {formatCurrency(value)}</title></rect>
-          })}<text x={center} y={height - 22} textAnchor="middle" className="annual-year-label">{year.year}</text></g>
-        })}
-        <path d={worthPath} fill="none" stroke="#172e57" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-        {worthPoints.map((point) => <circle key={point.year.year} cx={point.x} cy={point.y} r="7" fill="#fffefa" stroke="#172e57" strokeWidth="4"><title>{point.year.year} net worth: {formatCurrency(point.year.netWorth)}</title></circle>)}
-        {activeSummary && <g className="annual-tooltip" pointerEvents="none">
-          <rect className="annual-tooltip-shadow" x={tooltipX + 5} y="15" width={tooltipWidth} height="126" rx="14" />
-          <rect className="annual-tooltip-card" x={tooltipX} y="10" width={tooltipWidth} height="126" rx="14" />
-          <text className="annual-tooltip-year" x={tooltipX + 16} y="34">{activeSummary.year}</text>
-          <text x={tooltipX + 16} y="57">Income <tspan x={tooltipX + tooltipWidth - 16} textAnchor="end">{formatCurrency(activeSummary.income)}</tspan></text>
-          <text x={tooltipX + 16} y="78">Expenses <tspan x={tooltipX + tooltipWidth - 16} textAnchor="end">{formatCurrency(activeSummary.expenses)}</tspan></text>
-          <text x={tooltipX + 16} y="99">Invested <tspan x={tooltipX + tooltipWidth - 16} textAnchor="end">{formatCurrency(activeSummary.investments)}</tspan></text>
-          <text className="annual-tooltip-worth" x={tooltipX + 16} y="122">Net worth <tspan x={tooltipX + tooltipWidth - 16} textAnchor="end">{formatCurrency(activeSummary.netWorth)}</tspan></text>
-        </g>}
-        {years.map((year, yearIndex) => {
-          const x = padding.left + groupWidth * yearIndex
-          return <g
-            key={`hit-${year.year}`}
-            className="annual-year-hit"
-            role="button"
-            tabIndex={0}
-            aria-label={yearLabel(year)}
-            onMouseEnter={() => setActiveYear(year.year)}
-            onMouseLeave={() => setActiveYear(null)}
-            onFocus={() => setActiveYear(year.year)}
-            onBlur={() => setActiveYear(null)}
-            onPointerDown={(event) => {
-              if (event.pointerType !== 'mouse') setActiveYear((current) => current === year.year ? null : year.year)
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                setActiveYear((current) => current === year.year ? null : year.year)
-              }
-            }}
-          ><rect x={x} y={padding.top} width={groupWidth} height={plotHeight + 42} fill="transparent" /></g>
-        })}
-      </svg>
-      <p className="chart-interaction-hint">Hover, tap, or focus a year to see its values.</p>
+      <div
+        ref={viewportRef}
+        className="chart-viewport"
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => { setActiveIndex(null); dragRef.current = null }}
+        onPointerDown={(event) => { dragRef.current = { x: event.clientX, offset } }}
+        onPointerUp={() => { dragRef.current = null }}
+        onPointerCancel={() => { dragRef.current = null }}
+      >
+        <svg className="annual-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Income, expenses, investments and net worth, ${rangeLabel}`}>
+          <text className="axis-caption" x={padding.left} y={padding.top - 16}>Money flow (RM)</text>
+          <text className="axis-caption axis-caption-worth" x={width - padding.right} y={padding.top - 16} textAnchor="end">Net worth (RM)</text>
+          {[0, .25, .5, .75, 1].map((line) => {
+            const gridY = base - line * plotHeight
+            return <g key={line}>
+              <line x1={padding.left} y1={gridY} x2={width - padding.right} y2={gridY} stroke="#e2e8ee" strokeWidth="1" />
+              <text x={padding.left - 12} y={gridY + 4} textAnchor="end">{Math.round((flowMax * line) / 1000)}k</text>
+              <text className="axis-worth-tick" x={width - padding.right + 12} y={gridY + 4}>{Math.round((worthMax * line) / 1000)}k</text>
+            </g>
+          })}
+          <path className="income-area" d={`${flowPath('income')} L ${xFor(chartPoints.length - 1)} ${base} L ${xFor(0)} ${base} Z`} />
+          {worthSegments.filter((segment) => segment.length > 1).map((segment, index) => <path key={`worth-${index}`} className="worth-path" d={smoothPath(segment)} />)}
+          {flowSeries.map((series) => <path key={series.key} className="flow-path" d={flowPath(series.key)} stroke={series.color} />)}
+          {chartPoints.map((point, index) => point.worth === null ? null : <circle key={`worth-dot-${point.key}`} className="worth-dot" cx={xFor(index)} cy={yWorth(point.worth)} r={chartPoints.length > 24 ? 3 : 5} />)}
+          {chartPoints.map((point, index) => index % labelEvery === 0
+            ? <text key={`label-${point.key}`} x={xFor(index)} y={height - 18} textAnchor="middle" className="annual-year-label">{point.label}</text>
+            : null)}
+          {active && <>
+            <line className="annual-crosshair" x1={activeX} y1={padding.top} x2={activeX} y2={base} />
+            {flowSeries.map((series) => <circle key={`active-${series.key}`} className="active-dot" cx={activeX} cy={yFlow(active[series.key])} r="5.5" stroke={series.color} />)}
+            {active.worth !== null && <circle className="active-worth-dot" cx={activeX} cy={yWorth(active.worth)} r="6" />}
+            <g className="annual-tooltip" pointerEvents="none">
+              <rect className="annual-tooltip-shadow" x={tooltipX + 5} y={padding.top + 5} width={tooltipWidth} height={tooltipHeight} rx="14" />
+              <rect className="annual-tooltip-card" x={tooltipX} y={padding.top} width={tooltipWidth} height={tooltipHeight} rx="14" />
+              <text className="annual-tooltip-year" x={tooltipX + 15} y={padding.top + 24}>{active.label}</text>
+              <text x={tooltipX + 15} y={padding.top + 47}>Income <tspan x={tooltipX + tooltipWidth - 15} textAnchor="end">{formatCurrency(active.income)}</tspan></text>
+              <text x={tooltipX + 15} y={padding.top + 68}>Expenses <tspan x={tooltipX + tooltipWidth - 15} textAnchor="end">{formatCurrency(active.expenses)}</tspan></text>
+              <text x={tooltipX + 15} y={padding.top + 89}>Invested <tspan x={tooltipX + tooltipWidth - 15} textAnchor="end">{formatCurrency(active.investments)}</tspan></text>
+              {active.worth !== null && <text className="annual-tooltip-worth" x={tooltipX + 15} y={padding.top + 112}>Net worth <tspan x={tooltipX + tooltipWidth - 15} textAnchor="end">{formatCurrency(active.worth)}</tspan></text>}
+            </g>
+          </>}
+        </svg>
+      </div>
+      <p className="chart-interaction-hint">{monthly ? 'Monthly view' : 'Yearly view'} · {rangeLabel} · scroll to zoom, drag to pan, hover for a point. Net worth uses the right axis.</p>
     </div>
   )
 }
 
 function YearSparkline({ points }: { points: AnnualSummary['assetTrend'] }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+
   if (points.length < 2) return <div className="sparkline-empty" />
   const width = 280
-  const height = 54
+  const height = 78
   const values = points.map((point) => point.value)
   const min = Math.min(...values)
   const max = Math.max(...values)
   const spread = max - min || 1
-  const path = points.map((point, index) => {
-    const x = (index / (points.length - 1)) * width
-    const y = height - 4 - ((point.value - min) / spread) * (height - 8)
-    return `${index ? 'L' : 'M'} ${x} ${y}`
-  }).join(' ')
-  return <svg className="year-sparkline" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Monthly net worth from ${formatMonth(points[0].period)} to ${formatMonth(points.at(-1)!.period)}`}><path d={path} fill="none" stroke="var(--brand)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+  const coords = points.map((point, index) => ({
+    point,
+    xPercent: (index / (points.length - 1)) * 100,
+    yPercent: ((height - 4 - ((point.value - min) / spread) * (height - 8)) / height) * 100,
+  }))
+  const path = smoothPath(coords.map((coord) => ({ x: (coord.xPercent / 100) * width, y: (coord.yPercent / 100) * height })))
+  const active = activeIndex === null ? null : coords[activeIndex]
+
+  // the svg is stretched with preserveAspectRatio="none", so read the pointer against
+  // the rendered box rather than the viewBox, and draw the marker/readout in HTML
+  const trackPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect()
+    if (bounds.width === 0) return
+    const ratio = (event.clientX - bounds.left) / bounds.width
+    setActiveIndex(Math.max(0, Math.min(points.length - 1, Math.round(ratio * (points.length - 1)))))
+  }
+
+  return <div
+    className="year-sparkline-wrap"
+    onPointerMove={trackPointer}
+    onPointerDown={trackPointer}
+    onPointerLeave={() => setActiveIndex(null)}
+    onPointerCancel={() => setActiveIndex(null)}
+  >
+    <svg className="year-sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`Monthly closing worth from ${formatMonth(points[0].period)} to ${formatMonth(points.at(-1)!.period)}`}><path d={path} fill="none" stroke="var(--brand)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" /></svg>
+    {active && <>
+      <span className="sparkline-marker" style={{ left: `${active.xPercent}%`, top: `${active.yPercent}%` }} aria-hidden="true" />
+      <span
+        className="sparkline-readout"
+        style={{ left: `${active.xPercent}%`, transform: `translateX(${active.xPercent < 18 ? '0%' : active.xPercent > 82 ? '-100%' : '-50%'})` }}
+        role="status"
+      ><b>{formatShortMonth(active.point.period)}</b>{formatCurrency(active.point.value)}</span>
+    </>}
+  </div>
+}
+
+function LiquidAssetIndicator({
+  period,
+  assets,
+  expenses,
+  state,
+  change,
+}: {
+  period: string
+  assets: number
+  expenses: number
+  state: 'closed' | 'ongoing' | 'projected'
+  change: number | null
+}) {
+  const value = assets - expenses
+  const label = state === 'closed'
+    ? 'Closing worth'
+    : state === 'ongoing' ? 'Estimated current worth' : 'Projected worth'
+  const shortLabel = state === 'ongoing' ? 'Est. current worth' : label
+
+  return (
+    <aside className={`liquid-indicator ${state}`} aria-label={`${label} for ${formatMonth(period)}: ${formatCurrency(value)}${change === null ? '' : `, ${changeLabel(change)} against the previous month's closing`}`}>
+      <span className="liquid-indicator-icon" aria-hidden="true"><Wallet weight="duotone" /></span>
+      <div className="liquid-indicator-body">
+        <p><span className="label-long">{label}</span><span className="label-short">{shortLabel}</span>{state === 'ongoing' && <i className="live-dot" aria-hidden="true" />}</p>
+        <div className="liquid-indicator-figure">
+          <strong>{formatCurrency(value)}</strong>
+          {change !== null && <span className={`change-pill ${change < 0 ? 'negative' : ''} ${state === 'ongoing' ? 'live' : ''}`}>{changeLabel(change)}</span>}
+        </div>
+      </div>
+    </aside>
+  )
 }
 
 function Dashboard({ session }: { session: Session }) {
@@ -628,7 +870,7 @@ function Dashboard({ session }: { session: Session }) {
   const [categoryEditSavingId, setCategoryEditSavingId] = useState<string | null>(null)
   const [entryEditSavingId, setEntryEditSavingId] = useState<string | null>(null)
   const [expenseGroupSavingId, setExpenseGroupSavingId] = useState<string | null>(null)
-  const [newExpenseGroupId, setNewExpenseGroupId] = useState('')
+  const [newGroupIds, setNewGroupIds] = useState<Partial<Record<CategoryType, string>>>({})
   const [newCategoryNames, setNewCategoryNames] = useState<Record<CategoryType, string>>({
     asset: '',
     income: '',
@@ -716,6 +958,32 @@ function Dashboard({ session }: { session: Session }) {
     }
   }, [mobileNavOpen])
 
+  const keepScrollPosition = useCallback(async <T,>(action: () => Promise<T>) => {
+    const { scrollX, scrollY } = window
+    const restore = () => window.scrollTo({ left: scrollX, top: scrollY, behavior: 'auto' })
+    try {
+      return await action()
+    } finally {
+      restore()
+      requestAnimationFrame(restore)
+    }
+  }, [])
+
+  const groupsForType = (categoryType: CategoryType) => expenseGroups.filter((group) => group.category_type === categoryType)
+  const categoryHistoryMonths = (category: FinancialCategory) => {
+    const matchesName = (linked?: { name: string; category_type: CategoryType } | null) =>
+      linked?.category_type === category.category_type &&
+      linked.name.toLocaleLowerCase('en') === category.name.toLocaleLowerCase('en')
+    const months = new Set<string>()
+    records.forEach((record) => {
+      if (Number(record.amount) > 0 && (record.category_id === category.id || matchesName(record.financial_categories))) months.add(record.period)
+    })
+    entries.forEach((entry) => {
+      if (Number(entry.amount) > 0 && (entry.category_id === category.id || matchesName(entry.financial_categories))) months.add(entry.period)
+    })
+    return months.size
+  }
+
   const showSnapshot = useCallback((snapshot: { expense_groups: ExpenseGroup[]; categories: FinancialCategory[]; records: MonthlyRecord[]; entries: LedgerEntry[] }) => {
     setExpenseGroups(snapshot.expense_groups)
     setCategories(snapshot.categories)
@@ -724,9 +992,14 @@ function Dashboard({ session }: { session: Session }) {
   }, [])
 
   useEffect(() => {
-    setNewExpenseGroupId((current) => expenseGroups.some((group) => group.id === current)
-      ? current
-      : expenseGroups[0]?.id ?? '')
+    setNewGroupIds((current) => {
+      const next = { ...current }
+      ;(['expense', 'asset'] as CategoryType[]).forEach((categoryType) => {
+        const groups = expenseGroups.filter((group) => group.category_type === categoryType)
+        if (!groups.some((group) => group.id === next[categoryType])) next[categoryType] = groups[0]?.id ?? ''
+      })
+      return next
+    })
   }, [expenseGroups])
 
   const loadData = useCallback(async (showLoading = true) => {
@@ -785,34 +1058,69 @@ function Dashboard({ session }: { session: Session }) {
     return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([pointPeriod, value]) => ({ period: pointPeriod, value }))
   }, [records])
 
+  const monthlySeries = useMemo<MonthlyPoint[]>(() => {
+    const totals = new Map<string, { income: number; expenses: number; investments: number; assets: number; hasAssets: boolean }>()
+    records.forEach((record) => {
+      const recordType = record.financial_categories?.category_type
+      if (!recordType) return
+      const bucket = totals.get(record.period) ?? { income: 0, expenses: 0, investments: 0, assets: 0, hasAssets: false }
+      const value = Number(record.amount)
+      if (recordType === 'income') bucket.income += value
+      if (recordType === 'expense') bucket.expenses += value
+      if (recordType === 'investment') bucket.investments += value
+      if (recordType === 'asset') {
+        bucket.assets += value
+        bucket.hasAssets = true
+      }
+      totals.set(record.period, bucket)
+    })
+    const currentPeriod = getCurrentMonthPeriod()
+    return [...totals.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .filter(([period]) => period <= currentPeriod)
+      .map(([period, bucket]) => ({
+        period,
+        income: bucket.income,
+        expenses: bucket.expenses,
+        investments: bucket.investments,
+        worth: bucket.hasAssets ? bucket.assets - bucket.expenses : null,
+      }))
+  }, [records])
+
   const annualSummaries = useMemo<AnnualSummary[]>(() => {
     const yearMap = new Map<number, {
       income: number
       expenses: number
       investments: number
       assets: Map<string, number>
+      monthlyExpenses: Map<string, number>
     }>()
 
     records.forEach((record) => {
       const year = Number(record.period.slice(0, 4))
       if (!Number.isFinite(year)) return
-      const summary = yearMap.get(year) ?? { income: 0, expenses: 0, investments: 0, assets: new Map<string, number>() }
+      const summary = yearMap.get(year) ?? { income: 0, expenses: 0, investments: 0, assets: new Map<string, number>(), monthlyExpenses: new Map<string, number>() }
       const recordType = record.financial_categories?.category_type
       const value = Number(record.amount)
       if (recordType === 'income') summary.income += value
-      if (recordType === 'expense') summary.expenses += value
+      if (recordType === 'expense') {
+        summary.expenses += value
+        summary.monthlyExpenses.set(record.period, (summary.monthlyExpenses.get(record.period) ?? 0) + value)
+      }
       if (recordType === 'investment') summary.investments += value
       if (recordType === 'asset') summary.assets.set(record.period, (summary.assets.get(record.period) ?? 0) + value)
       yearMap.set(year, summary)
     })
 
-    let previousNetWorth: number | undefined
+    const currentPeriod = getCurrentMonthPeriod()
     return [...yearMap.entries()].sort(([a], [b]) => a - b).map(([year, summary]) => {
-      const yearlyAssetTrend = [...summary.assets.entries()]
+      const recordedAssets = [...summary.assets.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([period, value]) => ({ period, value }))
+        .filter(([period]) => period <= currentPeriod)
+      const yearlyAssetTrend = recordedAssets
+        .map(([period, value]) => ({ period, value: value - (summary.monthlyExpenses.get(period) ?? 0) }))
       const netWorth = yearlyAssetTrend.at(-1)?.value ?? 0
-      const openingWorth = previousNetWorth ?? yearlyAssetTrend[0]?.value ?? 0
+      const openingWorth = recordedAssets[0]?.[1] ?? 0
       const result: AnnualSummary = {
         year,
         income: summary.income,
@@ -820,11 +1128,11 @@ function Dashboard({ session }: { session: Session }) {
         investments: summary.investments,
         netWorth,
         netWorthChange: netWorth - openingWorth,
+        netWorthChangePercent: openingWorth ? ((netWorth - openingWorth) / Math.abs(openingWorth)) * 100 : null,
         monthsTracked: yearlyAssetTrend.length,
         savingsRate: summary.income ? ((summary.income - summary.expenses) / summary.income) * 100 : 0,
         assetTrend: yearlyAssetTrend,
       }
-      previousNetWorth = netWorth
       return result
     })
   }, [records])
@@ -838,12 +1146,22 @@ function Dashboard({ session }: { session: Session }) {
   const income = totalFor('income')
   const expenses = totalFor('expense')
   const investments = totalFor('investment')
-  const expenseGroupTotals = expenseGroups.map((group) => ({
-    ...group,
-    amount: monthRecords
-      .filter((record) => record.financial_categories?.category_type === 'expense' && record.financial_categories.expense_group_id === group.id)
-      .reduce((total, record) => total + Number(record.amount), 0),
-  }))
+  const monthlyClosing = useMemo(() => {
+    const totals = new Map<string, { assets: number; expenses: number }>()
+    records.forEach((record) => {
+      const recordType = record.financial_categories?.category_type
+      if (recordType !== 'asset' && recordType !== 'expense') return
+      const bucket = totals.get(record.period) ?? { assets: 0, expenses: 0 }
+      bucket[recordType === 'asset' ? 'assets' : 'expenses'] += Number(record.amount)
+      totals.set(record.period, bucket)
+    })
+    return new Map([...totals.entries()].map(([period, bucket]) => [period, bucket.assets - bucket.expenses]))
+  }, [records])
+  const currentYear = Number(getCurrentMonthPeriod().slice(0, 4))
+  const overviewPreviousClosing = monthlyClosing.get(getPreviousMonthPeriod(activePeriod))
+  const overviewChange = overviewPreviousClosing
+    ? ((assets - expenses - overviewPreviousClosing) / Math.abs(overviewPreviousClosing)) * 100
+    : null
   const recordPeriods = useMemo(
     () => [...new Set(records.map((record) => record.period))].sort().reverse(),
     [records],
@@ -869,7 +1187,8 @@ function Dashboard({ session }: { session: Session }) {
         sectionRecords.map((record) => [record.financial_categories?.name.toLocaleLowerCase('en') ?? '', Number(record.amount)]),
       )
       const total = sectionRecords.reduce((sum, record) => sum + Number(record.amount), 0)
-      const expenseGroupOrder = new Map(expenseGroups.map((group, index) => [group.id, index]))
+      const sectionGroups = expenseGroups.filter((group) => group.category_type === sectionType)
+      const groupOrder = new Map(sectionGroups.map((group, index) => [group.id, index]))
       const breakdown: CategoryBreakdown[] = sectionCategories
         .map((category, index) => {
           const amount = amountByName.get(category.name.toLocaleLowerCase('en')) ?? 0
@@ -880,18 +1199,32 @@ function Dashboard({ session }: { session: Session }) {
             percentage: total > 0 ? (amount / total) * 100 : 0,
             color: chartColors[index % chartColors.length],
             expenseGroupId: category.expense_group_id,
+            archived: !!category.archived_at,
           }
         })
         .sort((a, b) => {
-          if (sectionType === 'expense') {
-            const groupDifference = (expenseGroupOrder.get(a.expenseGroupId ?? '') ?? expenseGroups.length) - (expenseGroupOrder.get(b.expenseGroupId ?? '') ?? expenseGroups.length)
+          if (sectionGroups.length > 0) {
+            const groupDifference = (groupOrder.get(a.expenseGroupId ?? '') ?? sectionGroups.length) - (groupOrder.get(b.expenseGroupId ?? '') ?? sectionGroups.length)
             if (groupDifference !== 0) return groupDifference
           }
           return b.amount - a.amount || a.name.localeCompare(b.name)
         })
-      return { type: sectionType, total, categories: breakdown }
+      return { type: sectionType, total, categories: breakdown.filter((entry) => !entry.archived || entry.amount > 0) }
     })
   }, [categories, expenseGroups, records, summaryPeriod])
+  const liquidAssetTotal = recordSections.find((section) => section.type === 'asset')?.total ?? 0
+  const monthExpenseTotal = recordSections.find((section) => section.type === 'expense')?.total ?? 0
+  const currentMonthPeriod = getCurrentMonthPeriod()
+  const liquidAssetState = summaryPeriod < currentMonthPeriod
+    ? 'closed' as const
+    : summaryPeriod === currentMonthPeriod ? 'ongoing' as const : 'projected' as const
+  const showLiquidIndicator = liquidAssetTotal > 0 || monthExpenseTotal > 0
+
+  const previousClosing = monthlyClosing.get(getPreviousMonthPeriod(summaryPeriod))
+  const liquidAssetChange = previousClosing
+    ? ((liquidAssetTotal - monthExpenseTotal - previousClosing) / Math.abs(previousClosing)) * 100
+    : null
+
   const selectedCategorySummary = selectedCategoryEntries
     ? recordSections
         .find((section) => section.type === selectedCategoryEntries.type)
@@ -908,8 +1241,8 @@ function Dashboard({ session }: { session: Session }) {
       .sort((a, b) => b.entry_date.localeCompare(a.entry_date) || (b.created_at ?? '').localeCompare(a.created_at ?? ''))
   }, [entries, selectedCategoryEntries])
 
-  async function handleUpdateLedgerEntry(entry: LedgerEntry, nextAmount: number, nextDescription: string) {
-    if (!Number.isFinite(nextAmount) || nextAmount < 0 || !nextDescription.trim()) return false
+  async function saveLedgerEntry(entry: LedgerEntry, nextAmount: number, nextDescription: string) {
+    if (!Number.isFinite(nextAmount) || nextAmount < 0) return false
     const category = categories.find((item) => item.id === entry.category_id) ?? categories.find((item) =>
       item.category_type === entry.financial_categories?.category_type &&
       item.name.toLocaleLowerCase('en') === entry.financial_categories?.name.toLocaleLowerCase('en'),
@@ -1030,7 +1363,8 @@ function Dashboard({ session }: { session: Session }) {
     event.preventDefault()
     const categoryNameValue = newCategoryNames[categoryType].trim()
     if (!categoryNameValue) return
-    if (categoryType === 'expense' && !newExpenseGroupId) {
+    const typeGroups = groupsForType(categoryType)
+    if (typeGroups.length > 0 && !newGroupIds[categoryType]) {
       setNotice('Expense groups are not ready yet. Run the latest database migration, then try again.')
       return
     }
@@ -1056,7 +1390,7 @@ function Dashboard({ session }: { session: Session }) {
         categoryType,
         categoryName: categoryNameValue,
         categorySortOrder: sortOrder,
-        expenseGroupId: categoryType === 'expense' ? newExpenseGroupId : null,
+        expenseGroupId: typeGroups.length > 0 ? newGroupIds[categoryType] ?? null : null,
       })
       showSnapshot(queued.snapshot)
       setPendingCount(queued.pendingCount)
@@ -1087,11 +1421,11 @@ function Dashboard({ session }: { session: Session }) {
     }
   }
 
-  async function handleUpdateCategory(category: FinancialCategory, nextName: string, nextExpenseGroupId: string | null) {
+  async function saveCategory(category: FinancialCategory, nextName: string, nextExpenseGroupId: string | null) {
     const trimmedName = nextName.trim()
     if (!trimmedName) return false
-    if (category.category_type === 'expense' && !expenseGroups.some((group) => group.id === nextExpenseGroupId)) {
-      setNotice('Choose a valid expense group before saving this category.')
+    if (groupsForType(category.category_type).length > 0 && !expenseGroups.some((group) => group.id === nextExpenseGroupId)) {
+      setNotice('Choose a valid main group before saving this category.')
       return false
     }
     if (categories.some((item) =>
@@ -1116,11 +1450,15 @@ function Dashboard({ session }: { session: Session }) {
         .from('worthdelta_financial_categories')
         .update({
           name: trimmedName,
-          expense_group_id: category.category_type === 'expense' ? nextExpenseGroupId : null,
+          expense_group_id: groupsForType(category.category_type).length > 0 ? nextExpenseGroupId : null,
         })
         .eq('id', category.id)
         .eq('user_id', session.user.id)
       if (error) throw error
+
+      setCategories((current) => current.map((item) => item.id === category.id
+        ? { ...item, name: trimmedName, expense_group_id: groupsForType(category.category_type).length > 0 ? nextExpenseGroupId : null }
+        : item))
 
       const remote = await refreshRemoteSnapshot(session.user.id)
       showSnapshot(remote.snapshot)
@@ -1140,7 +1478,7 @@ function Dashboard({ session }: { session: Session }) {
     }
   }
 
-  async function handleUpdateExpenseGroup(group: ExpenseGroup, nextName: string) {
+  async function saveExpenseGroup(group: ExpenseGroup, nextName: string) {
     const trimmedName = nextName.trim()
     if (!trimmedName) return false
     if (expenseGroups.some((item) =>
@@ -1166,6 +1504,8 @@ function Dashboard({ session }: { session: Session }) {
         .eq('user_id', session.user.id)
       if (error) throw error
 
+      setExpenseGroups((current) => current.map((item) => item.id === group.id ? { ...item, name: trimmedName } : item))
+
       const remote = await refreshRemoteSnapshot(session.user.id)
       showSnapshot(remote.snapshot)
       setPendingCount(remote.pendingCount)
@@ -1184,9 +1524,59 @@ function Dashboard({ session }: { session: Session }) {
     }
   }
 
-  const filteredCategories = categories.filter((category) => category.category_type === type)
-  const ungroupedExpenseCategories = type === 'expense'
-    ? filteredCategories.filter((category) => !expenseGroups.some((group) => group.id === category.expense_group_id))
+  async function removeCategory(category: FinancialCategory) {
+    if (!navigator.onLine) {
+      setNotice('Reconnect to remove a category.')
+      return false
+    }
+    const keepsHistory = categoryHistoryMonths(category) > 0
+    setCategoryEditSavingId(category.id)
+    setSyncStatus('syncing')
+    setNotice('')
+    try {
+      await syncPendingChanges(session.user.id)
+      const query = supabase.from('worthdelta_financial_categories')
+      const { error } = keepsHistory
+        ? await query.update({ archived_at: new Date().toISOString() }).eq('id', category.id).eq('user_id', session.user.id)
+        : await query.delete().eq('id', category.id).eq('user_id', session.user.id)
+      if (error) throw error
+
+      setCategories((current) => keepsHistory
+        ? current.map((item) => item.id === category.id ? { ...item, archived_at: new Date().toISOString() } : item)
+        : current.filter((item) => item.id !== category.id))
+
+      const remote = await refreshRemoteSnapshot(session.user.id)
+      showSnapshot(remote.snapshot)
+      setPendingCount(remote.pendingCount)
+      setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
+      setLoadError('')
+      setNotice(keepsHistory
+        ? `${category.name} archived. Past months keep their amounts.`
+        : `${category.name} deleted.`)
+      return true
+    } catch (error) {
+      const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
+      setPendingCount(queued)
+      setSyncStatus(navigator.onLine ? 'pending' : 'offline')
+      setNotice(messageFrom(error))
+      return false
+    } finally {
+      setCategoryEditSavingId(null)
+    }
+  }
+
+  const handleDeleteCategory = (category: FinancialCategory) => keepScrollPosition(() => removeCategory(category))
+  const handleUpdateLedgerEntry = (entry: LedgerEntry, nextAmount: number, nextDescription: string) =>
+    keepScrollPosition(() => saveLedgerEntry(entry, nextAmount, nextDescription))
+  const handleUpdateCategory = (category: FinancialCategory, nextName: string, nextExpenseGroupId: string | null) =>
+    keepScrollPosition(() => saveCategory(category, nextName, nextExpenseGroupId))
+  const handleUpdateExpenseGroup = (group: ExpenseGroup, nextName: string) =>
+    keepScrollPosition(() => saveExpenseGroup(group, nextName))
+
+  const filteredCategories = categories.filter((category) => category.category_type === type && !category.archived_at)
+  const typeGroupList = groupsForType(type)
+  const ungroupedTypeCategories = typeGroupList.length > 0
+    ? filteredCategories.filter((category) => !typeGroupList.some((group) => group.id === category.expense_group_id))
     : []
   const EntryTypeIcon = categoryMeta[type].icon
   const SelectedCategoryIcon = selectedCategoryEntries ? categoryMeta[selectedCategoryEntries.type].icon : Receipt
@@ -1233,23 +1623,23 @@ function Dashboard({ session }: { session: Session }) {
 
         {view === 'overview' ? <>
         <section className="metric-grid" aria-label="Latest monthly summary">
-          <article><span>Asset value</span><strong>{formatCurrency(assets)}</strong><small>Current snapshot</small></article>
+          <article><span><span className="label-long">Estimated current worth</span><span className="label-short">Est. current worth</span>{activePeriod === currentMonthPeriod && <i className="live-dot" aria-hidden="true" />}</span><strong>{formatCurrency(assets - expenses)}{overviewChange !== null && <span className={`change-pill ${overviewChange < 0 ? 'negative' : ''} ${activePeriod === currentMonthPeriod ? 'live' : ''}`}>{changeLabel(overviewChange)}</span>}</strong><small>{formatMonth(activePeriod)}</small></article>
           <article><span>Monthly income</span><strong>{formatCurrency(income)}</strong><small>{formatMonth(activePeriod)}</small></article>
-          <article><span>Monthly expenses</span><strong>{formatCurrency(expenses)}</strong><small className="expense-metric-breakdown">{expenseGroupTotals.length ? expenseGroupTotals.map((group) => <span key={group.id}>{group.name} {formatCurrency(group.amount)}</span>) : income ? `${Math.round((expenses / income) * 100)}% of income` : 'No income recorded'}</small></article>
+          <article><span>Monthly expenses</span><strong>{formatCurrency(expenses)}</strong><small>{income ? `${Math.round((expenses / income) * 100)}% of income` : formatMonth(activePeriod)}</small></article>
           <article><span>Invested</span><strong>{formatCurrency(investments)}</strong><small>{formatMonth(activePeriod)}</small></article>
         </section>
 
         <section className="panel annual-panel">
-          <div className="panel-heading annual-heading"><div><p className="eyebrow">Annual dashboard</p><h2>Your financial progress</h2><p>Income, spending, investing, and closing net worth by year.</p></div><span className="annual-range">{annualSummaries[0]?.year ?? '—'}–{annualSummaries.at(-1)?.year ?? '—'}</span></div>
-          {loading ? <div className="loading-state"><SpinnerGap className="spin" aria-hidden="true" />Loading annual progress…</div> : <AnnualChart years={annualSummaries} />}
+          <div className="panel-heading annual-heading"><div><p className="eyebrow">Annual overview</p><h2>Your financial progress</h2><p>Income, spending, investing, and net worth by year. The current year shows where it stands today.</p></div><span className="annual-range">{annualSummaries[0]?.year ?? '—'}–{annualSummaries.at(-1)?.year ?? '—'}</span></div>
+          {loading ? <div className="loading-state"><SpinnerGap className="spin" aria-hidden="true" />Loading annual progress…</div> : <AnnualChart points={monthlySeries} />}
         </section>
 
         <section className="year-progress-section" aria-labelledby="year-progress-title">
-          <div className="section-heading"><div><p className="eyebrow">Year by year</p><h2 id="year-progress-title">Progress cards</h2></div><p>Closing net worth uses the latest asset month recorded in each year.</p></div>
-          <div className="year-progress-grid">{annualSummaries.map((year) => <article className="year-card" key={year.year}>
-            <div className="year-card-heading"><div><span>{year.year}</span><strong>{formatCurrency(year.netWorth)}</strong><small>Closing net worth</small></div><span className={`year-change ${year.netWorthChange < 0 ? 'negative' : ''}`}>{year.netWorthChange >= 0 ? '+' : ''}{formatCurrency(year.netWorthChange)}</span></div>
+          <div className="section-heading"><div><p className="eyebrow">Year by year</p><h2 id="year-progress-title">Progress cards</h2></div><p>Each year settles on its last recorded month, after that month's spending. The current year stays live.</p></div>
+          <div className="year-progress-grid">{[...annualSummaries].reverse().map((year) => <article className="year-card" key={year.year}>
+            <div className="year-card-heading"><div><span>{year.year}</span><strong>{formatCurrency(year.netWorth)}</strong><small>{year.year === currentYear ? 'Current worth' : 'Closing worth'}</small></div><span className={`year-change ${year.netWorthChange < 0 ? 'negative' : ''}`}>{year.netWorthChange >= 0 ? '+' : ''}{formatCurrency(year.netWorthChange)}{year.netWorthChangePercent !== null && <small>{changeLabel(year.netWorthChangePercent)}</small>}</span></div>
             <YearSparkline points={year.assetTrend} />
-            <dl><div><dt>Income</dt><dd>{formatCurrency(year.income)}</dd></div><div><dt>Expenses</dt><dd>{formatCurrency(year.expenses)}</dd></div><div><dt>Invested</dt><dd>{formatCurrency(year.investments)}</dd></div><div><dt>Savings rate</dt><dd>{Math.round(year.savingsRate)}%</dd></div></dl>
+            <dl><div><dt>Income</dt><dd>{formatCurrency(year.income)}</dd></div><div><dt>Expenses</dt><dd>{formatCurrency(year.expenses)}</dd></div><div><dt>Invested</dt><dd>{formatCurrency(year.investments)}{year.income > 0 && <span className="dd-ratio">({Math.round((year.investments / year.income) * 100)}%)</span>}</dd></div><div><dt>Savings rate</dt><dd>{Math.round(year.savingsRate)}%</dd></div></dl>
             <div className="year-months"><span><strong>{year.monthsTracked}</strong> of 12 asset months</span><span>{Math.min(100, Math.round((year.monthsTracked / 12) * 100))}%</span></div><div className="year-progress-track"><span style={{ width: `${Math.min(100, (year.monthsTracked / 12) * 100)}%` }} /></div>
           </article>)}</div>
         </section>
@@ -1263,40 +1653,42 @@ function Dashboard({ session }: { session: Session }) {
         </section>
 
         {loading ? <div className="loading-state"><SpinnerGap className="spin" aria-hidden="true" />Loading category sections…</div> : <section className="record-section-grid" aria-label={`Category summaries for ${formatMonth(summaryPeriod)}`}>
-          {recordSections.map((section) => <RecordSectionCard key={section.type} type={section.type} period={summaryPeriod} total={section.total} categories={section.categories} expenseGroups={expenseGroups} onOpenCategory={(sectionType, category) => setSelectedCategoryEntries({ type: sectionType, category, period: summaryPeriod })} />)}
+          {recordSections.map((section) => <RecordSectionCard key={section.type} type={section.type} period={summaryPeriod} total={section.total} categories={section.categories} expenseGroups={groupsForType(section.type)} onOpenCategory={(sectionType, category) => setSelectedCategoryEntries({ type: sectionType, category, period: summaryPeriod })} />)}
         </section>}
         </> : <>
         <section className="category-settings-grid" aria-label="Financial category settings">
           {(Object.keys(categoryMeta) as CategoryType[]).map((categoryType) => {
             const meta = categoryMeta[categoryType]
             const Icon = meta.icon
-            const sectionCategories = categories.filter((category) => category.category_type === categoryType)
-            const unassignedSettingsCategories = categoryType === 'expense'
-              ? sectionCategories.filter((category) => !expenseGroups.some((group) => group.id === category.expense_group_id))
+            const sectionCategories = categories.filter((category) => category.category_type === categoryType && !category.archived_at)
+            const settingsGroups = groupsForType(categoryType)
+            const unassignedSettingsCategories = settingsGroups.length > 0
+              ? sectionCategories.filter((category) => !settingsGroups.some((group) => group.id === category.expense_group_id))
               : []
             return <article className={`category-settings-card ${categoryType}`} key={categoryType}>
               <header><span className={`record-section-icon ${categoryType}`}><Icon weight="duotone" aria-hidden="true" /></span><div><h2>{meta.label}</h2><p>{sectionCategories.length} {sectionCategories.length === 1 ? 'category' : 'categories'}</p></div></header>
-              <form className={`category-add-form ${categoryType === 'expense' ? 'with-group' : ''}`} onSubmit={(event) => void handleAddCategory(event, categoryType)}>
+              <form className={`category-add-form ${settingsGroups.length > 0 ? 'with-group' : ''}`} onSubmit={(event) => void handleAddCategory(event, categoryType)}>
                 <label><span className="sr-only">New {meta.label.toLocaleLowerCase('en')} category</span><input value={newCategoryNames[categoryType]} onChange={(event) => setNewCategoryNames((current) => ({ ...current, [categoryType]: event.target.value }))} placeholder={`New ${meta.label.toLocaleLowerCase('en')} category`} maxLength={80} required /></label>
-                {categoryType === 'expense' && <label><span className="sr-only">Main group for new expense category</span><select value={newExpenseGroupId} onChange={(event) => setNewExpenseGroupId(event.target.value)} required><option value="" disabled>Choose group</option>{expenseGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>}
-                <button type="submit" disabled={categorySaving !== null || (categoryType === 'expense' && !newExpenseGroupId)}>{categorySaving === categoryType ? <SpinnerGap className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}Add</button>
+                {settingsGroups.length > 0 && <label><span className="sr-only">Main group for new {meta.label.toLocaleLowerCase('en')} category</span><select value={newGroupIds[categoryType] ?? ''} onChange={(event) => setNewGroupIds((current) => ({ ...current, [categoryType]: event.target.value }))} required><option value="" disabled>Choose group</option>{settingsGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>}
+                <button type="submit" disabled={categorySaving !== null || (settingsGroups.length > 0 && !newGroupIds[categoryType])}>{categorySaving === categoryType ? <SpinnerGap className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}Add</button>
               </form>
-              {categoryType === 'expense' ? expenseGroups.length === 0 ? <p className="settings-empty">Expense groups are not available yet.</p> : <div className="expense-settings-groups">
-                {expenseGroups.map((group, groupIndex) => {
+              {settingsGroups.length > 0 ? <div className="expense-settings-groups">
+                {settingsGroups.map((group, groupIndex) => {
                   const groupCategories = sectionCategories.filter((category) => category.expense_group_id === group.id)
                   return <section className={`expense-settings-group tone-${groupIndex % 2}`} key={group.id}>
                     <header><ExpenseGroupEditor group={group} saving={expenseGroupSavingId === group.id} onSave={(name) => handleUpdateExpenseGroup(group, name)} /><span>{groupCategories.length} {groupCategories.length === 1 ? 'category' : 'categories'}</span></header>
-                    {groupCategories.length === 0 ? <p className="expense-group-empty">No categories assigned.</p> : <div className="category-chip-list">{groupCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={expenseGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} />)}</div>}
+                    {groupCategories.length === 0 ? <p className="expense-group-empty">No categories assigned.</p> : <div className="category-chip-list">{groupCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={settingsGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} onDelete={() => handleDeleteCategory(category)} historyMonths={categoryHistoryMonths(category)} />)}</div>}
                   </section>
                 })}
-                {unassignedSettingsCategories.length > 0 && <section className="expense-settings-group unassigned"><header><strong>Unassigned</strong><span>{unassignedSettingsCategories.length} categories</span></header><div className="category-chip-list">{unassignedSettingsCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={expenseGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} />)}</div></section>}
-              </div> : sectionCategories.length === 0 ? <p className="settings-empty">No categories here yet.</p> : <div className="category-chip-list section-category-chips">{sectionCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={expenseGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} />)}</div>}
+                {unassignedSettingsCategories.length > 0 && <section className="expense-settings-group unassigned"><header><strong>Unassigned</strong><span>{unassignedSettingsCategories.length} categories</span></header><div className="category-chip-list">{unassignedSettingsCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={settingsGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} onDelete={() => handleDeleteCategory(category)} historyMonths={categoryHistoryMonths(category)} />)}</div></section>}
+              </div> : sectionCategories.length === 0 ? <p className="settings-empty">No categories here yet.</p> : <div className="category-chip-list section-category-chips">{sectionCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={settingsGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} onDelete={() => handleDeleteCategory(category)} historyMonths={categoryHistoryMonths(category)} />)}</div>}
             </article>
           })}
         </section>
         </>}
 
         {view === 'records' && <>
+          {!loading && showLiquidIndicator && <LiquidAssetIndicator period={summaryPeriod} assets={liquidAssetTotal} expenses={monthExpenseTotal} state={liquidAssetState} change={liquidAssetChange} />}
           {addMenuOpen && <div className="floating-menu-backdrop" aria-hidden="true" onPointerDown={() => setAddMenuOpen(false)} />}
           <div className="floating-add-group">
             {addMenuOpen && <div className="floating-type-menu" id="entry-type-menu" role="menu" aria-label="Choose entry section">
@@ -1315,9 +1707,9 @@ function Dashboard({ session }: { session: Session }) {
             <header className="entry-dialog-heading"><div><p className="eyebrow">New record</p><h2 id="entry-dialog-title">Add a new entry</h2><p>Every entry updates its monthly category total.</p></div><button type="button" onClick={() => setEntryDialogOpen(false)} aria-label="Close add entry form"><X aria-hidden="true" /></button></header>
             <form onSubmit={handleSave}>
               <div className={`entry-type-badge ${type}`}><EntryTypeIcon weight="duotone" aria-hidden="true" /><span>{categoryMeta[type].label}</span></div>
-              <label><span>Category</span><select value={categoryName} onChange={(event) => setCategoryName(event.target.value)} required><option value="" disabled>{filteredCategories.length ? 'Choose a category' : 'Add a category in Settings first'}</option>{type === 'expense' ? <>
-                {expenseGroups.map((group) => { const groupCategories = filteredCategories.filter((category) => category.expense_group_id === group.id); return groupCategories.length > 0 ? <optgroup key={group.id} label={group.name}>{groupCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</optgroup> : null })}
-                {ungroupedExpenseCategories.length > 0 && <optgroup label="Unassigned">{ungroupedExpenseCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</optgroup>}
+              <label><span>Category</span><select value={categoryName} onChange={(event) => setCategoryName(event.target.value)} required><option value="" disabled>{filteredCategories.length ? 'Choose a category' : 'Add a category in Settings first'}</option>{typeGroupList.length > 0 ? <>
+                {typeGroupList.map((group) => { const groupCategories = filteredCategories.filter((category) => category.expense_group_id === group.id); return groupCategories.length > 0 ? <optgroup key={group.id} label={group.name}>{groupCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</optgroup> : null })}
+                {ungroupedTypeCategories.length > 0 && <optgroup label="Unassigned">{ungroupedTypeCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</optgroup>}
               </> : filteredCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label>
               {filteredCategories.length === 0 && <a className="dialog-settings-link" href="#settings" onClick={() => setEntryDialogOpen(false)}><GearSix aria-hidden="true" />Open category settings</a>}
               <label><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What makes up this amount?" maxLength={200} required /></label>
