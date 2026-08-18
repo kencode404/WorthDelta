@@ -624,7 +624,21 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
   const pointersRef = useRef(new Map<number, number>())
   const pinchRef = useRef<{ distance: number; midpoint: number; span: number; offset: number } | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [boxWidth, setBoxWidth] = useState(1080)
   const total = points.length
+
+  // draw at the size we are actually given, so one unit is one pixel: nothing is
+  // scaled down, nothing is clipped off the right, and the text stays legible
+  useEffect(() => {
+    const node = viewportRef.current
+    if (!node || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => {
+      const next = Math.round(entry.contentRect.width)
+      if (next > 0) setBoxWidth(next)
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [expanded])
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -690,9 +704,12 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
         return years
       }, {}))
 
-  const width = 1080
-  const padding = { top: 38, right: 72, bottom: 46, left: 70 }
-  const plotHeight = 296
+  const width = Math.max(300, boxWidth)
+  const compact = width < 620
+  const padding = compact
+    ? { top: 26, right: 44, bottom: 30, left: 44 }
+    : { top: 38, right: 72, bottom: 46, left: 70 }
+  const plotHeight = compact ? 200 : 296
   const height = padding.top + plotHeight + padding.bottom
   const plotWidth = width - padding.left - padding.right
   const base = padding.top + plotHeight
@@ -726,11 +743,12 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
 
   const active = activeIndex === null ? null : chartPoints[Math.min(activeIndex, chartPoints.length - 1)]
   const activeX = active ? xFor(Math.min(activeIndex!, chartPoints.length - 1)) : 0
-  const tooltipWidth = 214
-  const tooltipHeight = active?.worth === null ? 104 : 126
+  const tooltipWidth = compact ? 150 : 214
+  const row = compact ? 15 : 21
+  const tooltipHeight = row * (active?.worth === null ? 4 : 5) + 16
   const tooltipX = Math.max(padding.left, Math.min(activeX + 16, width - padding.right - tooltipWidth))
 
-  const labelEvery = Math.max(1, Math.ceil(chartPoints.length / 8))
+  const labelEvery = Math.max(1, Math.ceil(chartPoints.length / (compact ? 3 : 8)))
   const rangeLabel = `${chartPoints[0]?.label ?? ''} – ${chartPoints.at(-1)?.label ?? ''}`
 
   /**
@@ -851,7 +869,7 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
           dragRef.current = null
         }}
       >
-        <svg ref={svgRef} className="annual-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Income, expenses, investments and net worth, ${rangeLabel}`}>
+        <svg ref={svgRef} className={`annual-chart ${compact ? 'compact' : ''}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Income, expenses, investments and net worth, ${rangeLabel}`}>
           <text className="axis-caption" x={padding.left} y={padding.top - 16}>Money flow (RM)</text>
           <text className="axis-caption axis-caption-worth" x={width - padding.right} y={padding.top - 16} textAnchor="end">Net worth (RM)</text>
           {[0, .25, .5, .75, 1].map((line) => {
@@ -874,13 +892,13 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
             {flowSeries.map((series) => <circle key={`active-${series.key}`} className="active-dot" cx={activeX} cy={yFlow(active[series.key])} r="5.5" stroke={series.color} />)}
             {active.worth !== null && <circle className="active-worth-dot" cx={activeX} cy={yWorth(active.worth)} r="6" />}
             <g className="annual-tooltip" pointerEvents="none">
-              <rect className="annual-tooltip-shadow" x={tooltipX + 5} y={padding.top + 5} width={tooltipWidth} height={tooltipHeight} rx="14" />
-              <rect className="annual-tooltip-card" x={tooltipX} y={padding.top} width={tooltipWidth} height={tooltipHeight} rx="14" />
-              <text className="annual-tooltip-year" x={tooltipX + 15} y={padding.top + 24}>{active.label}</text>
-              <text x={tooltipX + 15} y={padding.top + 47}>Income <tspan x={tooltipX + tooltipWidth - 15} textAnchor="end">{formatCurrency(active.income)}</tspan></text>
-              <text x={tooltipX + 15} y={padding.top + 68}>Expenses <tspan x={tooltipX + tooltipWidth - 15} textAnchor="end">{formatCurrency(active.expenses)}</tspan></text>
-              <text x={tooltipX + 15} y={padding.top + 89}>Invested <tspan x={tooltipX + tooltipWidth - 15} textAnchor="end">{formatCurrency(active.investments)}</tspan></text>
-              {active.worth !== null && <text className="annual-tooltip-worth" x={tooltipX + 15} y={padding.top + 112}>Net worth <tspan x={tooltipX + tooltipWidth - 15} textAnchor="end">{formatCurrency(active.worth)}</tspan></text>}
+              <rect className="annual-tooltip-shadow" x={tooltipX + 4} y={padding.top + 4} width={tooltipWidth} height={tooltipHeight} rx="12" />
+              <rect className="annual-tooltip-card" x={tooltipX} y={padding.top} width={tooltipWidth} height={tooltipHeight} rx="12" />
+              <text className="annual-tooltip-year" x={tooltipX + 12} y={padding.top + row + 2}>{active.label}</text>
+              <text x={tooltipX + 12} y={padding.top + row * 2 + 5}>Income <tspan x={tooltipX + tooltipWidth - 12} textAnchor="end">{formatCurrency(active.income)}</tspan></text>
+              <text x={tooltipX + 12} y={padding.top + row * 3 + 5}>Expenses <tspan x={tooltipX + tooltipWidth - 12} textAnchor="end">{formatCurrency(active.expenses)}</tspan></text>
+              <text x={tooltipX + 12} y={padding.top + row * 4 + 5}>Invested <tspan x={tooltipX + tooltipWidth - 12} textAnchor="end">{formatCurrency(active.investments)}</tspan></text>
+              {active.worth !== null && <text className="annual-tooltip-worth" x={tooltipX + 12} y={padding.top + row * 5 + 5}>Net worth <tspan x={tooltipX + tooltipWidth - 12} textAnchor="end">{formatCurrency(active.worth)}</tspan></text>}
             </g>
           </>}
         </svg>

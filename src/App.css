@@ -126,9 +126,14 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .chart-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
 .chart-legend .legend-line { width: 20px; height: 4px; border-radius: 999px; background: var(--navy); }
 .chart-legend .legend-dashed { background: repeating-linear-gradient(90deg, var(--navy) 0 7px, transparent 7px 12px); }
-.annual-chart { display: block; width: 100%; min-width: 700px; height: auto; margin-top: 12px; overflow: visible; }
+.annual-chart { display: block; width: 100%; height: auto; margin-top: 10px; overflow: visible; }
 .annual-chart text { fill: #68778b; font: 11px/1 'Nunito', sans-serif; }
 .annual-chart .annual-year-label { fill: var(--ink); font-weight: 800; }
+.annual-chart.compact text { font-size: 9px; }
+.annual-chart.compact .axis-caption { font-size: 8px; letter-spacing: .04em; }
+.annual-chart.compact .annual-year-label { font-size: 10px; }
+.annual-chart.compact .annual-tooltip text { font-size: 10px; }
+.annual-chart.compact .annual-tooltip .annual-tooltip-year { font-size: 12px; }
 .annual-chart .axis-caption { fill: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .annual-chart .axis-caption-worth, .annual-chart .axis-worth-tick { fill: var(--navy); }
 .income-area { fill: rgba(33, 138, 112, .14); }
