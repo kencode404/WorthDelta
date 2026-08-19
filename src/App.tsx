@@ -37,6 +37,7 @@ import {
   hasBiometric,
   hasPin,
   registerBiometric,
+  syncPinFromServer,
   setPin,
   verifyBiometric,
   verifyPin,
@@ -1141,17 +1142,22 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
     if (pinSet && !(await verifyPin(current))) return setError('That current PIN does not match.')
     if (next.length !== 4) return setError('The new PIN needs four digits.')
     if (next !== confirm) return setError('The two new PINs do not match.')
-    await setPin(next)
+    try {
+      await setPin(next)
+      setMessage('PIN saved to your account. Every browser and device will ask for it.')
+    } catch (saveError) {
+      // the local copy did save, so the lock is live on this device either way
+      setError(messageFrom(saveError))
+    }
     setPinSet(true)
     reset()
-    setMessage('PIN saved. It is asked for each time the app opens.')
   }
 
   async function handleTurnOff() {
     setError('')
     setMessage('')
     if (!(await verifyPin(current))) return setError('Enter your current PIN to turn it off.')
-    clearPin()
+    await clearPin()
     setPinSet(false)
     setBiometricOn(false)
     reset()
@@ -1458,7 +1464,12 @@ function Dashboard({ session }: { session: Session }) {
 
     try {
       const cached = await getOfflineSnapshot(session.user.id)
-      if (cached) showSnapshot(cached)
+      if (cached) {
+        // the cache is a complete, usable dashboard: show it and drop the
+        // spinner now, and let the refresh below land quietly behind it
+        showSnapshot(cached)
+        setLoading(false)
+      }
 
       const queued = await getPendingChangeCount(session.user.id)
       setPendingCount(queued)
@@ -2327,7 +2338,11 @@ function App() {
   }, [])
 
   useEffect(() => {
-    void supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false) })
+    void supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setLoading(false)
+      if (data.session) void syncPinFromServer().then((locksOnServer) => { if (locksOnServer) setLocked(true) })
+    })
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => { setSession(nextSession); setLoading(false) })
     return () => data.subscription.unsubscribe()
   }, [])

@@ -9,6 +9,8 @@
  * SHA-256 of it.
  */
 
+import { supabase } from './supabase'
+
 const PIN_KEY = 'worthdelta-lock'
 const BIOMETRIC_KEY = 'worthdelta-lock-biometric'
 
@@ -40,12 +42,34 @@ const readPin = (): StoredPin | null => {
   }
 }
 
+/** Synchronous, from this device's copy: lets the lock appear before any network. */
 export const hasPin = () => readPin() !== null
+
+/**
+ * The PIN belongs to the account, not to one browser. Kept on the profile row so
+ * a different browser, or a phone opening the app for the first time, still asks
+ * for it, with the local copy acting only as a cache so the lock can appear
+ * immediately and keep working offline.
+ */
+export async function syncPinFromServer() {
+  const { data, error } = await supabase
+    .from('worthdelta_profiles')
+    .select('lock_pin')
+    .maybeSingle()
+  if (error) return hasPin() // offline or unreadable: trust the local copy
+  const remote = data?.lock_pin as string | null | undefined
+  if (remote) window.localStorage.setItem(PIN_KEY, remote)
+  else window.localStorage.removeItem(PIN_KEY)
+  return remote != null
+}
 
 export async function setPin(pin: string) {
   if (!/^\d{4}$/.test(pin)) throw new Error('Choose four digits.')
   const salt = toHex(crypto.getRandomValues(new Uint8Array(16)).buffer)
-  window.localStorage.setItem(PIN_KEY, JSON.stringify({ salt, hash: await digest(pin, salt) }))
+  const stored = JSON.stringify({ salt, hash: await digest(pin, salt) })
+  window.localStorage.setItem(PIN_KEY, stored)
+  const { error } = await supabase.from('worthdelta_profiles').update({ lock_pin: stored }).eq('id', (await supabase.auth.getUser()).data.user?.id ?? '')
+  if (error) throw new Error('Saved on this device, but could not save it to your account. Check your connection and try again.')
 }
 
 export async function verifyPin(pin: string) {
@@ -54,9 +78,10 @@ export async function verifyPin(pin: string) {
   return (await digest(pin, stored.salt)) === stored.hash
 }
 
-export function clearPin() {
+export async function clearPin() {
   window.localStorage.removeItem(PIN_KEY)
   window.localStorage.removeItem(BIOMETRIC_KEY)
+  await supabase.from('worthdelta_profiles').update({ lock_pin: null }).eq('id', (await supabase.auth.getUser()).data.user?.id ?? '')
 }
 
 // ------------------------------------------------------------- biometrics

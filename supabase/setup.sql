@@ -89,6 +89,10 @@ alter table public.worthdelta_financial_categories
   add column if not exists expense_group_id uuid;
 alter table public.worthdelta_financial_categories
   add column if not exists archived_at timestamptz;
+-- salted hash of the app-lock PIN, so the lock follows the account rather than
+-- one browser's local storage
+alter table public.worthdelta_profiles
+  add column if not exists lock_pin text;
 
 -- ----------------------------------------------------------- constraints
 
