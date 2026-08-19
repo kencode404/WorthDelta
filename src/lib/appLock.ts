@@ -72,7 +72,15 @@ export async function biometricAvailable() {
   }
 }
 
-/** Registers this device's own authenticator: Face ID, Touch ID or Android biometrics. */
+/**
+ * Registers this device's own authenticator: Face ID, Touch ID or Android
+ * biometrics.
+ *
+ * residentKey is 'discouraged' on purpose. A discoverable credential is stored
+ * as an iCloud passkey, and unlocking one makes the platform show an account
+ * chooser first. A device-bound credential skips that sheet and goes straight to
+ * the face or finger check, which is all this lock needs.
+ */
 export async function registerBiometric(userId: string, label: string) {
   const credential = await navigator.credentials.create({
     publicKey: {
@@ -83,7 +91,8 @@ export async function registerBiometric(userId: string, label: string) {
       authenticatorSelection: {
         authenticatorAttachment: 'platform',
         userVerification: 'required',
-        residentKey: 'preferred',
+        residentKey: 'discouraged',
+        requireResidentKey: false,
       },
       attestation: 'none',
       timeout: 60000,
@@ -103,7 +112,9 @@ export async function verifyBiometric() {
   const assertion = await navigator.credentials.get({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      allowCredentials: [{ type: 'public-key', id: fromBase64(stored) }],
+      // naming the one credential, on this device only, leaves the platform
+      // nothing to ask about before it checks the face or finger
+      allowCredentials: [{ type: 'public-key', id: fromBase64(stored), transports: ['internal'] }],
       userVerification: 'required',
       timeout: 60000,
     },
