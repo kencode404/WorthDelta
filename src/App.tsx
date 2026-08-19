@@ -1029,7 +1029,6 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
         </div>
       </>}
       </div>
-      <p className="chart-interaction-hint">{monthly ? 'Monthly view' : 'Yearly view'} · {rangeLabel} · scroll or pinch to zoom, hold and drag to pan, tap or hover for a point. Net worth uses the right axis.</p>
     </div>
   )
 

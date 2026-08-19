@@ -149,7 +149,6 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .annual-chart .annual-tooltip text { fill: var(--ink); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .annual-chart .annual-tooltip .annual-tooltip-year { fill: var(--brand-dark); font: 800 17px/1 'Baloo 2', sans-serif; }
 .annual-chart .annual-tooltip .annual-tooltip-worth { fill: var(--brand-dark); font-weight: 800; }
-.chart-interaction-hint { margin: 8px 0 0; color: var(--muted); font-size: 11px; text-align: center; }
 .annual-chart-wrap { overflow-x: hidden; }
 .chart-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
 .export-panel { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 18px; padding: 20px 22px; }
@@ -179,7 +178,6 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .annual-chart-wrap.expanded .chart-range-controls { padding: 2px; }
   .annual-chart-wrap.expanded .chart-range-controls button { min-width: 32px; min-height: 26px; padding: 0 7px; font-size: 10px; }
   .annual-chart-wrap.expanded .chart-expand-button { width: 28px; height: 28px; }
-  .annual-chart-wrap.expanded .chart-interaction-hint { margin-top: 2px; font-size: 9px; line-height: 1.25; }
   .annual-chart-wrap.expanded .chart-viewport { touch-action: none; }
 }
 .annual-chart-wrap.expanded { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; gap: 12px; }
@@ -559,7 +557,6 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .annual-panel { padding: 14px 8px 10px; }
   .annual-panel .panel-heading { padding: 0 6px; }
   .annual-panel .chart-toolbar { padding: 0 4px; }
-  .annual-panel .chart-interaction-hint { padding: 0 6px; }
   .form-row { grid-template-columns: 1fr; }
   .chart-controls { grid-template-columns: 1fr; }
   .record-toolbar { width: 100%; }
