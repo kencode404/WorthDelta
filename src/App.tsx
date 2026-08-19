@@ -10,6 +10,7 @@ import {
   GearSix,
   List,
   Plus,
+  Lock,
   Receipt,
   SignOut,
   Trash,
@@ -29,9 +30,20 @@ import {
   refreshRemoteSnapshot,
   syncPendingChanges,
 } from './lib/offlineStore'
+import {
+  biometricAvailable,
+  clearBiometric,
+  clearPin,
+  hasBiometric,
+  hasPin,
+  registerBiometric,
+  setPin,
+  verifyBiometric,
+  verifyPin,
+} from './lib/appLock'
 import { fetchMyrRate } from './lib/exchangeRate'
 import { captureChartImage, downloadWorkbook } from './lib/exportWorkbook'
-import { supabase } from './lib/supabase'
+import { ensureFreshSession, isExpiredTokenError, supabase } from './lib/supabase'
 import type { CategoryType, ExpenseGroup, FinancialCategory, LedgerEntry, MonthlyRecord } from './types'
 import './App.css'
 
@@ -134,9 +146,9 @@ type SyncStatus = 'offline' | 'syncing' | 'pending' | 'synced'
 type DashboardView = 'overview' | 'records' | 'settings'
 
 const dashboardViewFromHash = (): DashboardView => {
-  if (window.location.hash === '#records') return 'records'
+  if (window.location.hash === '#overview') return 'overview'
   if (window.location.hash === '#settings') return 'settings'
-  return 'overview'
+  return 'records'
 }
 
 interface AnnualSummary {
@@ -668,6 +680,17 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
   }
   const [expanded, setExpanded] = useState(false)
   const [boxWidth, setBoxWidth] = useState(1080)
+  const [boxHeight, setBoxHeight] = useState(0)
+  // a finger scrolls the chart; a mouse keeps the drag-and-window behaviour.
+  // Width would be the wrong test: a phone turned landscape is wide but still touch.
+  const [touchDevice, setTouchDevice] = useState(() => window.matchMedia('(pointer: coarse)').matches)
+
+  useEffect(() => {
+    const query = window.matchMedia('(pointer: coarse)')
+    const update = () => setTouchDevice(query.matches)
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
   const total = points.length
 
   // draw at the size we are actually given, so one unit is one pixel: nothing is
@@ -676,9 +699,11 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
     const node = viewportRef.current
     if (!node || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(([entry]) => {
-      const next = Math.round(entry.contentRect.width)
+      const nextWidth = Math.round(entry.contentRect.width)
+      const nextHeight = Math.round(entry.contentRect.height)
       // ignore sub-pixel churn, which would otherwise re-render on every frame
-      if (next > 0) setBoxWidth((current) => Math.abs(current - next) > 2 ? next : current)
+      if (nextWidth > 0) setBoxWidth((current) => Math.abs(current - nextWidth) > 2 ? nextWidth : current)
+      setBoxHeight((current) => Math.abs(current - nextHeight) > 6 ? nextHeight : current)
     })
     observer.observe(node)
     return () => observer.disconnect()
@@ -727,7 +752,7 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
 
   if (points.length === 0) return <div className="chart-empty">Your progress will appear once records are added.</div>
   const containerWidth = Math.max(300, boxWidth)
-  const scrollable = containerWidth < 620
+  const scrollable = touchDevice
   const visibleCount = Math.max(2, Math.min(total, span ?? total))
   const maxOffset = Math.max(0, total - visibleCount)
   const start = Math.max(0, Math.min(maxOffset, maxOffset - offset))
@@ -759,11 +784,13 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
 
   // on a phone the drawing is as wide as the zoom asks for and the viewport scrolls
   const width = scrollable ? Math.round(containerWidth * Math.max(1, total / visibleCount)) : containerWidth
-  const compact = scrollable
+  const compact = containerWidth < 620
   const padding = compact
     ? { top: 26, right: 44, bottom: 30, left: 44 }
     : { top: 38, right: 72, bottom: 46, left: 70 }
-  const plotHeight = compact ? 200 : 296
+  const plotHeight = expanded && boxHeight > 90
+    ? Math.max(110, Math.min(compact ? 300 : 460, boxHeight - padding.top - padding.bottom - 6))
+    : compact ? 200 : 296
   const height = padding.top + plotHeight + padding.bottom
   const plotWidth = width - padding.left - padding.right
   const base = padding.top + plotHeight
@@ -1093,6 +1120,146 @@ function LiquidAssetIndicator({
   )
 }
 
+function SecurityPanel({ userId, label }: { userId: string; label: string }) {
+  const [pinSet, setPinSet] = useState(hasPin)
+  const [biometricOn, setBiometricOn] = useState(hasBiometric)
+  const [biometricReady, setBiometricReady] = useState(false)
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => { void biometricAvailable().then(setBiometricReady) }, [])
+
+  const onlyDigits = (value: string) => value.replace(/\D/g, '').slice(0, 4)
+  const reset = () => { setCurrent(''); setNext(''); setConfirm('') }
+
+  async function handleSave(event: React.FormEvent) {
+    event.preventDefault()
+    setError('')
+    setMessage('')
+    if (pinSet && !(await verifyPin(current))) return setError('That current PIN does not match.')
+    if (next.length !== 4) return setError('The new PIN needs four digits.')
+    if (next !== confirm) return setError('The two new PINs do not match.')
+    await setPin(next)
+    setPinSet(true)
+    reset()
+    setMessage('PIN saved. It is asked for each time the app opens.')
+  }
+
+  async function handleTurnOff() {
+    setError('')
+    setMessage('')
+    if (!(await verifyPin(current))) return setError('Enter your current PIN to turn it off.')
+    clearPin()
+    setPinSet(false)
+    setBiometricOn(false)
+    reset()
+    setMessage('PIN removed.')
+  }
+
+  async function handleBiometric() {
+    setError('')
+    setMessage('')
+    if (biometricOn) {
+      clearBiometric()
+      setBiometricOn(false)
+      return setMessage('Biometric unlock turned off.')
+    }
+    try {
+      await registerBiometric(userId, label)
+      setBiometricOn(true)
+      setMessage('Biometric unlock is on. Your PIN still works as a fallback.')
+    } catch (registerError) {
+      setError(messageFrom(registerError))
+    }
+  }
+
+  return (
+    <section className="panel security-panel" aria-labelledby="security-title">
+      <div className="security-intro">
+        <p className="eyebrow">Security</p>
+        <h2 id="security-title"><Lock weight="duotone" aria-hidden="true" />App lock</h2>
+        <p>A 4-digit PIN asked for every time WorthDelta opens. It guards this device only — your data is still protected by your sign-in.</p>
+      </div>
+      <form className="security-form" onSubmit={(event) => void handleSave(event)}>
+        {pinSet && <label><span>Current PIN</span><input value={current} onChange={(event) => setCurrent(onlyDigits(event.target.value))} type="password" inputMode="numeric" autoComplete="off" /></label>}
+        <label><span>{pinSet ? 'New PIN' : 'PIN'}</span><input value={next} onChange={(event) => setNext(onlyDigits(event.target.value))} type="password" inputMode="numeric" autoComplete="off" /></label>
+        <label><span>Confirm</span><input value={confirm} onChange={(event) => setConfirm(onlyDigits(event.target.value))} type="password" inputMode="numeric" autoComplete="off" /></label>
+        <div className="security-actions">
+          <button className="primary-action-button" type="submit">{pinSet ? 'Change PIN' : 'Turn on PIN'}</button>
+          {pinSet && <button className="dialog-cancel-button" type="button" onClick={() => void handleTurnOff()}>Turn off</button>}
+          {pinSet && biometricReady && <button className="dialog-cancel-button" type="button" onClick={() => void handleBiometric()}>{biometricOn ? 'Disable Face ID / fingerprint' : 'Use Face ID / fingerprint'}</button>}
+        </div>
+        {error && <p className="form-alert error" role="alert">{error}</p>}
+        {message && <p className="notice" role="status">{message}</p>}
+      </form>
+    </section>
+  )
+}
+
+function LockScreen({ onUnlock }: { onUnlock: () => void }) {
+  const [pin, setPinValue] = useState('')
+  const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
+  const biometric = hasBiometric()
+
+  const tryBiometric = useCallback(async () => {
+    try {
+      if (await verifyBiometric()) onUnlock()
+    } catch {
+      setError('Biometric unlock was cancelled. Enter your PIN.')
+    }
+  }, [onUnlock])
+
+  // prompt once on open; onUnlock is a fresh closure each render, so guard it
+  const promptedRef = useRef(false)
+  useEffect(() => {
+    if (!biometric || promptedRef.current) return
+    promptedRef.current = true
+    void tryBiometric()
+  }, [biometric, tryBiometric])
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (pin.length !== 4 || checking) return
+    setChecking(true)
+    if (await verifyPin(pin)) onUnlock()
+    else {
+      setError('That PIN does not match.')
+      setPinValue('')
+    }
+    setChecking(false)
+  }
+
+  return (
+    <main className="lock-screen">
+      <form className="lock-card" onSubmit={(event) => void handleSubmit(event)}>
+        <span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
+        <h1>WorthDelta is locked</h1>
+        <p>Enter your 4-digit PIN to continue.</p>
+        <input
+          className="lock-input"
+          value={pin}
+          onChange={(event) => {
+            setPinValue(event.target.value.replace(/\D/g, '').slice(0, 4))
+            setError('')
+          }}
+          type="password"
+          inputMode="numeric"
+          autoComplete="off"
+          aria-label="PIN"
+          autoFocus
+        />
+        {error && <p className="form-alert error" role="alert">{error}</p>}
+        <button className="primary-action-button" type="submit" disabled={pin.length !== 4 || checking}>Unlock</button>
+        {biometric && <button className="lock-biometric" type="button" onClick={() => void tryBiometric()}>Use Face ID or fingerprint</button>}
+      </form>
+    </main>
+  )
+}
+
 function Dashboard({ session }: { session: Session }) {
   const [view, setView] = useState<DashboardView>(dashboardViewFromHash)
   const [expenseGroups, setExpenseGroups] = useState<ExpenseGroup[]>([])
@@ -1150,7 +1317,7 @@ function Dashboard({ session }: { session: Session }) {
       window.scrollTo({ top: 0, behavior: 'auto' })
     }
     if (!['#overview', '#records', '#settings'].includes(window.location.hash)) {
-      window.history.replaceState(null, '', '#overview')
+      window.history.replaceState(null, '', '#records')
     }
     handleHashChange()
     window.addEventListener('hashchange', handleHashChange)
@@ -1287,7 +1454,7 @@ function Dashboard({ session }: { session: Session }) {
     })
   }, [expenseGroups])
 
-  const loadData = useCallback(async (showLoading = true) => {
+  const loadData = useCallback(async (showLoading = true, isRetry = false) => {
     if (showLoading) setLoading(true)
 
     try {
@@ -1302,6 +1469,8 @@ function Dashboard({ session }: { session: Session }) {
         return
       }
 
+      await ensureFreshSession()
+
       if (queued > 0) {
         setSyncStatus('syncing')
         await syncPendingChanges(session.user.id)
@@ -1313,6 +1482,11 @@ function Dashboard({ session }: { session: Session }) {
       setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
       setLoadError('')
     } catch (error) {
+      // a token that lapsed in the background is worth one silent retry
+      if (isExpiredTokenError(error) && !isRetry) {
+        const { data } = await supabase.auth.refreshSession()
+        if (data.session) return loadData(false, true)
+      }
       const queued = await getPendingChangeCount(session.user.id).catch(() => 0)
       setPendingCount(queued)
       setSyncStatus(navigator.onLine ? 'pending' : 'offline')
@@ -1327,11 +1501,17 @@ function Dashboard({ session }: { session: Session }) {
     void loadData()
     const handleOnline = () => void loadData(false)
     const handleOffline = () => setSyncStatus('offline')
+    // coming back to the app after a while is exactly when the token has lapsed
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) void loadData(false)
+    }
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+    document.addEventListener('visibilitychange', handleVisible)
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      document.removeEventListener('visibilitychange', handleVisible)
     }
   }, [loadData])
 
@@ -2060,6 +2240,7 @@ function Dashboard({ session }: { session: Session }) {
           <div><p className="eyebrow">Spreadsheet</p><h2 id="export-title">Export to Excel</h2><p>One sheet per year with your months as live formulas — each cell keeps its parts, like <code>=12.5+30+8</code> — plus totals, worth change, savings rate and a snapshot of the annual chart.</p></div>
           <button className="primary-action-button" type="button" onClick={() => void handleExport()} disabled={exporting || records.length === 0}>{exporting ? <SpinnerGap className="spin" aria-hidden="true" /> : <DownloadSimple aria-hidden="true" />}{exporting ? 'Building…' : 'Download .xlsx'}</button>
         </section>
+        <SecurityPanel userId={session.user.id} label={session.user.email ?? 'WorthDelta user'} />
         </>}
 
         {view === 'records' && <>
@@ -2117,6 +2298,8 @@ function Dashboard({ session }: { session: Session }) {
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  // a PIN, once set, is asked for every time the app is opened
+  const [locked, setLocked] = useState(hasPin)
 
   useEffect(() => {
     void supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false) })
@@ -2125,7 +2308,9 @@ function App() {
   }, [])
 
   if (loading) return <main className="boot-screen"><span className="brand-mark" aria-hidden="true">Δ</span><SpinnerGap className="spin" aria-label="Loading WorthDelta" /></main>
-  return session ? <Dashboard session={session} /> : <HubRedirect />
+  if (!session) return <HubRedirect />
+  if (locked) return <LockScreen onUnlock={() => setLocked(false)} />
+  return <Dashboard session={session} />
 }
 
 export default App

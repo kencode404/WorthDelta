@@ -107,7 +107,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .metric-grid article, .panel { border: 3px solid var(--panel-border); background: var(--surface); box-shadow: var(--shadow); }
 .metric-grid article { position: relative; padding: 14px 16px; overflow: hidden; border-radius: 18px; }
 .metric-grid article::after { content: ''; position: absolute; width: 48px; height: 48px; top: -24px; right: -19px; border: 2px solid rgba(23, 46, 87, .08); border-radius: 50%; background: rgba(255,255,255,.35); }
-.metric-grid article:nth-child(1) { border-color: #68af87; background: #d7f5e7; }
+.metric-grid article:nth-child(1) { border-color: #c9a13a; background: #fffaea; }
 .metric-grid article:nth-child(2) { border-color: #72aaa0; background: #dff2ed; }
 .metric-grid article:nth-child(3) { border-color: #9692bd; background: #e9e8f7; }
 .metric-grid article:nth-child(4) { border-color: #81ad72; background: #e2f2dc; }
@@ -195,7 +195,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .axis-overlay.left span, .axis-overlay.left b { right: 5px; }
 .axis-overlay.right { right: 0; background: linear-gradient(270deg, var(--surface) 74%, transparent); }
 .axis-overlay.right span, .axis-overlay.right b { left: 5px; color: var(--navy); }
-@media (max-width: 620px) {
+@media (pointer: coarse) {
   .axis-overlay { display: block; }
   .chart-viewport { overflow-x: auto; overflow-y: hidden; touch-action: pan-x pan-y; scrollbar-width: thin; scrollbar-color: rgba(23, 46, 87, .3) transparent; }
   .chart-viewport::-webkit-scrollbar { height: 4px; }
@@ -411,7 +411,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
    out-specify it to keep blinking. */
 .live-dot { display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; color: var(--brand-dark); background: currentColor; box-shadow: 0 0 7px 1px currentColor; vertical-align: middle; animation: live-rec 1s ease-in-out infinite !important; }
 @keyframes live-rec { 0%, 100% { opacity: 1; } 50% { opacity: .32; } }
-.metric-grid article:nth-child(1) .live-dot { color: #2f7d51; }
+.metric-grid article:nth-child(1) .live-dot { color: #a97f12; }
 .liquid-indicator.ongoing .live-dot { color: #a97f12; }
 .change-pill { color: var(--success); font: 800 10px/1.4 'Nunito', sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; white-space: nowrap; }
 .change-pill.negative { color: #a54c52; }
@@ -556,6 +556,10 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .metric-grid span, .metric-grid small { font-size: 10px; }
   .metric-grid strong { margin: 5px 0 3px; font-size: 19px; }
   .panel { padding: 18px; }
+  .annual-panel { padding: 14px 8px 10px; }
+  .annual-panel .panel-heading { padding: 0 6px; }
+  .annual-panel .chart-toolbar { padding: 0 4px; }
+  .annual-panel .chart-interaction-hint { padding: 0 6px; }
   .form-row { grid-template-columns: 1fr; }
   .chart-controls { grid-template-columns: 1fr; }
   .record-toolbar { width: 100%; }
@@ -593,7 +597,9 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .entry-dialog input, .entry-dialog select { min-height: 38px; padding: 0 10px; border-radius: 11px; font-size: 14px; }
   .entry-dialog .amount-field { grid-template-columns: 70px minmax(0, 1fr); gap: 6px; }
   .entry-dialog .amount-field select { font-size: 12px; }
-  .entry-dialog .form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .entry-dialog .form-row { grid-template-columns: minmax(0, 1.02fr) minmax(0, .98fr); gap: 8px; }
+  .entry-dialog input[type="date"] { min-width: 0; padding: 0 6px; font-size: 13px; }
+  .entry-dialog .amount-field input { padding: 0 8px; }
   .entry-dialog .entry-type-badge { min-height: 38px; padding: 0 12px; font-size: 12px; }
   .entry-dialog .entry-dialog-actions { grid-template-columns: minmax(88px, .45fr) minmax(0, 1fr); gap: 9px; margin-top: 1px; }
   .entry-dialog .primary-action-button, .entry-dialog .dialog-cancel-button { min-height: 42px; font-size: 12px; }
@@ -608,4 +614,26 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .section-heading > p { text-align: left; }
   .year-card { padding: 18px; }
   .year-card-heading { align-items: flex-start; flex-direction: column; }
+}
+
+.lock-screen { display: grid; place-items: center; min-height: 100svh; padding: 24px; background: var(--canvas); }
+.lock-card { display: grid; justify-items: center; gap: 12px; width: min(360px, 100%); padding: 30px 26px; border: 3px solid var(--panel-border); border-radius: 26px; background: var(--surface); box-shadow: var(--shadow); text-align: center; }
+.lock-card .brand-mark { width: 54px; height: 54px; border-radius: 17px; }
+.lock-card h1 { margin: 4px 0 0; color: var(--navy); font: 800 23px/1.15 'Baloo 2', sans-serif; }
+.lock-card > p { margin: 0; color: var(--muted); font-size: 12px; }
+.lock-input { width: 160px; height: 56px; margin-top: 4px; border-radius: 16px; font-size: 28px; font-weight: 800; letter-spacing: .5em; text-align: center; text-indent: .5em; }
+.lock-card .primary-action-button { width: 100%; }
+.lock-biometric { padding: 6px 4px; border: 0; color: var(--brand-dark); background: none; font: inherit; font-size: 12px; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.security-panel { display: grid; gap: 16px; margin-top: 18px; padding: 20px 22px; }
+.security-intro h2 { display: flex; align-items: center; gap: 9px; margin: 2px 0 4px; color: var(--navy); font: 800 21px/1.15 'Baloo 2', sans-serif; }
+.security-intro h2 svg { width: 22px; height: 22px; color: var(--brand-dark); }
+.security-intro p:last-child { max-width: 620px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.security-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); align-items: end; gap: 12px; }
+.security-form input { max-width: 190px; letter-spacing: .3em; text-align: center; }
+.security-actions { display: flex; flex-wrap: wrap; gap: 10px; grid-column: 1 / -1; }
+.security-form .form-alert, .security-form .notice { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 560px) {
+  .security-form { grid-template-columns: 1fr; }
+  .security-form input { max-width: none; }
+  .security-actions .primary-action-button, .security-actions .dialog-cancel-button { flex: 1 1 auto; }
 }
