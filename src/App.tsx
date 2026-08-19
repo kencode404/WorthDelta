@@ -2299,6 +2299,32 @@ function App() {
   const [loading, setLoading] = useState(true)
   // a PIN, once set, is asked for every time the app is opened
   const [locked, setLocked] = useState(hasPin)
+  const hiddenSinceRef = useRef<number | null>(null)
+
+  // Opening WorthDelta from K-Super Hub often reuses the same tab, so the app is
+  // resumed rather than loaded and the initial lock never runs again. Re-lock
+  // when it comes back from the background, or from the back/forward cache.
+  useEffect(() => {
+    const RELOCK_AFTER = 45_000
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenSinceRef.current = Date.now()
+        return
+      }
+      const hiddenSince = hiddenSinceRef.current
+      hiddenSinceRef.current = null
+      if (hasPin() && hiddenSince && Date.now() - hiddenSince > RELOCK_AFTER) setLocked(true)
+    }
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted && hasPin()) setLocked(true)
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('pageshow', handlePageShow)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('pageshow', handlePageShow)
+    }
+  }, [])
 
   useEffect(() => {
     void supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false) })
