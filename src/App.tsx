@@ -648,7 +648,7 @@ function CategoryEditor({
       <div className="compact-icon-field">
         <label className="compact-group-select">
           <span>Icon</span>
-          <input className="compact-icon-input" value={icon} onChange={(event) => setIcon(event.target.value)} placeholder="🙂" aria-label={`Emoji for ${category.name}`} />
+          <input className="compact-icon-input" value={icon} onChange={(event) => setIcon(event.target.value)} aria-label={`Emoji for ${category.name}`} />
         </label>
         <div>
           <p>{nextIcon ? 'Tap the field, then your keyboard’s emoji key.' : 'Optional — without one the colour dot stays.'}</p>
