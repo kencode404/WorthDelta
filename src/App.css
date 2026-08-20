@@ -320,6 +320,8 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .category-breakdown-button:hover { background: rgba(255, 255, 255, .68); }
 .category-breakdown-button:focus-visible { outline: 3px solid rgba(34, 139, 34, .26); outline-offset: -2px; }
 .category-color { width: 10px; height: 10px; border: 1px solid rgba(23, 46, 87, .18); border-radius: 50%; }
+.category-breakdown-emoji { width: 18px; font-size: 15px; line-height: 1; text-align: center; }
+.heading-emoji { margin-right: 8px; }
 .category-breakdown-name { min-width: 0; }
 .category-breakdown-name strong { display: block; overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .category-progress { display: block; height: 5px; margin-top: 6px; overflow: hidden; border-radius: 999px; background: rgba(23, 46, 87, .1); }
@@ -364,6 +366,12 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .category-chip-editor.income .category-chip > i { background: #398a78; }
 .category-chip-editor.investment .category-chip > i { background: #a17e22; }
 .category-chip-editor.expense .category-chip > i { background: currentColor; }
+.category-emoji { flex: 0 0 auto; font-size: 14px; line-height: 1; }
+.category-chip .category-emoji { font-size: 13px; }
+.compact-icon-field { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: center; gap: 9px; }
+.compact-icon-input { min-height: 38px; padding: 0 4px; border-radius: 10px; font-size: 19px; line-height: 1; text-align: center; }
+.compact-icon-field p { margin: 0; color: var(--muted); font-size: 9px; font-weight: 700; line-height: 1.45; }
+.compact-icon-clear { margin-top: 3px; padding: 2px 0; border: 0; color: var(--danger); background: none; font: inherit; font-size: 10px; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .category-edit-popover { position: absolute; top: calc(100% + 7px); left: 0; z-index: 30; display: grid; width: min(290px, calc(100vw - 72px)); gap: 7px; padding: 10px; border: 2px solid #769680; border-radius: 14px; background: #fff; box-shadow: 0 8px 0 rgba(76, 111, 86, .2), 0 18px 32px rgba(23, 46, 87, .16); }
 .category-edit-popover::before { content: ''; position: absolute; top: -6px; left: 18px; width: 10px; height: 10px; border: solid #769680; border-width: 2px 0 0 2px; background: #fff; transform: rotate(45deg); }
 .compact-editor-label { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
@@ -449,6 +457,34 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .floating-add-button.open { background: #126312; transform: rotate(90deg); }
 .floating-add-button svg { width: 21px; height: 21px; }
 @keyframes speed-dial-in { from { opacity: 0; transform: translateY(12px) scale(.94); } to { opacity: 1; transform: translateY(0) scale(1); } }
+/* Phones only: a native dropdown drops option colours on iOS, so main groups
+   are told apart here by a coloured stripe instead. */
+.category-picker-field { display: grid; gap: 4px; }
+.category-picker-field > span { color: var(--ink); font-size: 11px; font-weight: 700; }
+.category-picker-trigger { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 38px; padding: 0 10px; border: 2px solid #c8d1e2; border-radius: 11px; color: var(--ink); background: var(--surface); font: inherit; font-size: 14px; font-weight: 700; text-align: left; }
+.category-picker-trigger > span:not(.category-emoji) { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.category-picker-trigger > svg { flex: 0 0 auto; width: 15px; height: 15px; color: var(--muted); }
+.category-picker-trigger > i { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--brand); }
+.category-picker-trigger:disabled { cursor: not-allowed; opacity: .6; }
+.category-picker-dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 32px); padding: 0; overflow: hidden; border: 0; border-radius: 22px; color: var(--ink); background: transparent; }
+.category-picker-dialog::backdrop { background: rgba(13, 29, 57, .52); backdrop-filter: blur(3px); }
+.category-picker-card { display: grid; grid-template-rows: auto minmax(0, 1fr); max-height: calc(100dvh - 32px); overflow: hidden; border: 3px solid #5f9f74; border-radius: 22px; background: #fbfff9; box-shadow: 0 9px 0 #3f8055, 0 24px 54px rgba(13, 29, 57, .24); }
+.category-picker-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 14px 14px 8px; }
+.category-picker-heading .eyebrow { margin: 0 0 3px; font-size: 10px; }
+.category-picker-heading h2 { margin: 0; color: var(--navy); font: 800 19px/1.1 'Baloo 2', sans-serif; }
+.category-picker-heading > button { display: grid; flex: 0 0 auto; place-items: center; width: 36px; height: 36px; border: 2px solid #789884; border-radius: 11px; color: var(--navy); background: #fff; box-shadow: 0 3px 0 rgba(76, 111, 86, .25); }
+.category-picker-heading > button svg { width: 18px; height: 18px; }
+.category-picker-list { padding: 0 12px 14px; overflow-y: auto; overscroll-behavior: contain; }
+.category-picker-group + .category-picker-group { margin-top: 8px; }
+.category-picker-group > header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 7px; padding: 9px 2px 6px; color: var(--group-color); background: #fbfff9; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.category-picker-group > header > i { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--group-color); }
+.category-picker-option { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 0 11px 0 14px; border: 2px solid rgba(23, 46, 87, .12); border-radius: 13px; color: var(--ink); background: #fff; box-shadow: inset 4px 0 0 var(--group-color), 0 2px 0 rgba(23, 46, 87, .07); font: inherit; font-size: 14px; font-weight: 800; text-align: left; }
+.category-picker-option + .category-picker-option { margin-top: 6px; }
+.category-picker-option.chosen { border-color: var(--brand); background: var(--brand-soft); }
+.category-picker-option > span:not(.category-emoji) { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.category-picker-option > svg { flex: 0 0 auto; width: 19px; height: 19px; color: var(--brand); }
+.category-picker-option > i { flex: 0 0 auto; width: 9px; height: 9px; margin-left: 5px; border-radius: 50%; background: var(--group-color); }
+.category-picker-option .category-emoji { width: 19px; font-size: 17px; text-align: center; }
 .entry-dialog { width: min(650px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; overflow: auto; border: 0; border-radius: 26px; color: var(--ink); background: transparent; }
 .entry-dialog::backdrop { background: rgba(13, 29, 57, .52); backdrop-filter: blur(3px); }
 .entry-dialog-card { padding: clamp(22px, 4vw, 34px); border: 3px solid #5f9f74; border-radius: 26px; background: #fbfff9; box-shadow: 0 9px 0 #3f8055, 0 24px 54px rgba(13, 29, 57, .24); }

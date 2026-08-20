@@ -14,6 +14,8 @@ export interface FinancialCategory {
   user_id: string
   category_type: CategoryType
   name: string
+  /** optional emoji shown in place of the category's colour dot */
+  icon?: string | null
   sort_order: number
   expense_group_id: string | null
   /** set when the category is retired but still has history worth keeping */

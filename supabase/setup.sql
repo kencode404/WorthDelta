@@ -38,6 +38,7 @@ create table if not exists public.worthdelta_financial_categories (
   user_id uuid not null references auth.users(id) on delete cascade,
   category_type text not null check (category_type in ('asset', 'income', 'expense', 'investment')),
   name text not null check (char_length(trim(name)) between 1 and 100),
+  icon text check (icon is null or char_length(icon) between 1 and 12),
   sort_order integer not null default 0,
   expense_group_id uuid,
   archived_at timestamptz,
@@ -89,6 +90,9 @@ alter table public.worthdelta_financial_categories
   add column if not exists expense_group_id uuid;
 alter table public.worthdelta_financial_categories
   add column if not exists archived_at timestamptz;
+-- an optional emoji, so a category is recognisable before its name is read
+alter table public.worthdelta_financial_categories
+  add column if not exists icon text;
 -- salted hash of the app-lock PIN, so the lock follows the account rather than
 -- one browser's local storage
 alter table public.worthdelta_profiles
@@ -106,6 +110,13 @@ begin
     alter table public.worthdelta_expense_groups
       add constraint worthdelta_expense_groups_category_type_check
       check (category_type in ('expense', 'asset'));
+  end if;
+
+  -- an emoji or two, never a second name: the chip has no room to grow
+  if not exists (select 1 from pg_constraint where conname = 'worthdelta_financial_categories_icon_check') then
+    alter table public.worthdelta_financial_categories
+      add constraint worthdelta_financial_categories_icon_check
+      check (icon is null or char_length(icon) between 1 and 12);
   end if;
 
   if not exists (select 1 from pg_constraint where conname = 'worthdelta_financial_categories_expense_group_fk') then

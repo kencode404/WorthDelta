@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
   ArrowsOut,
+  CaretDown,
   CheckCircle,
   DownloadSimple,
   ChartLineUp,
@@ -168,6 +169,7 @@ interface AnnualSummary {
 interface CategoryBreakdown {
   id: string
   name: string
+  icon: string | null
   amount: number
   percentage: number
   color: string
@@ -185,6 +187,30 @@ interface DonutGroupBreakdown {
 
 const chartColors = ['#228b22', '#2f6e9e', '#c46a3a', '#8064a2', '#c24d57', '#b08720', '#41827a', '#667085']
 const expenseGroupColors = ['#2f6e9e', '#d06b34', '#8064a2', '#687386']
+
+// The icon field takes whatever the keyboard sends, which can be a whole
+// sentence. Keep the first grapheme: one emoji is the point, and a flag or a
+// family is several code points that must not be torn in half.
+function firstEmoji(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (typeof Intl.Segmenter === 'function') {
+    const [first] = new Intl.Segmenter().segment(trimmed)
+    return first?.segment ?? null
+  }
+  return [...trimmed][0] ?? null
+}
+
+/** an emoji reads fine inside a native option; a colour would not on iOS */
+const optionLabel = (category: FinancialCategory) =>
+  category.icon ? `${category.icon}  ${category.name}` : category.name
+
+/** the category's emoji when it has one, otherwise the colour dot it always had */
+function CategoryIcon({ category }: { category: Pick<FinancialCategory, 'icon'> }) {
+  return category.icon
+    ? <span className="category-emoji" aria-hidden="true">{category.icon}</span>
+    : <i aria-hidden="true" />
+}
 const rateCacheKey = (code: string) => `worthdelta-rate-${code}`
 
 const readCachedRate = (code: string) => {
@@ -382,7 +408,9 @@ function RecordSectionCard({
   const meta = categoryMeta[type]
   const Icon = meta.icon
   const categoryRow = (category: CategoryBreakdown) => <button className="category-breakdown-row category-breakdown-button" type="button" key={category.id} onClick={() => onOpenCategory(type, category)} aria-label={`View and edit ${category.name} entries`}>
-    <span className="category-color" style={{ background: category.color }} aria-hidden="true" />
+    {category.icon
+      ? <span className="category-breakdown-emoji" aria-hidden="true">{category.icon}</span>
+      : <span className="category-color" style={{ background: category.color }} aria-hidden="true" />}
     <span className="category-breakdown-name"><strong>{category.name}</strong><span className="category-progress" aria-hidden="true"><i style={{ width: `${category.percentage}%`, background: category.color }} /></span></span>
     <span className="category-breakdown-value"><strong>{formatCurrency(category.amount)}</strong><small>{category.percentage.toFixed(category.percentage > 0 && category.percentage < 1 ? 1 : 0)}%</small></span>
   </button>
@@ -552,7 +580,7 @@ function CategoryEditor({
   category: FinancialCategory
   expenseGroups: ExpenseGroup[]
   saving: boolean
-  onSave: (name: string, expenseGroupId: string | null) => Promise<boolean>
+  onSave: (name: string, expenseGroupId: string | null, icon: string | null) => Promise<boolean>
   onDelete: () => Promise<boolean>
   historyMonths: number
 }) {
@@ -560,14 +588,16 @@ function CategoryEditor({
   const [open, setOpen] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [name, setName] = useState(category.name)
+  const [icon, setIcon] = useState(category.icon ?? '')
   const [expenseGroupId, setExpenseGroupId] = useState(category.expense_group_id ?? '')
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setName(category.name)
+    setIcon(category.icon ?? '')
     setExpenseGroupId(category.expense_group_id ?? '')
-  }, [category.name, category.expense_group_id])
+  }, [category.name, category.icon, category.expense_group_id])
   useEffect(() => {
     if (!open) return
     inputRef.current?.focus()
@@ -588,28 +618,42 @@ function CategoryEditor({
   useEffect(() => { if (!open) setConfirmingDelete(false) }, [open])
 
   const trimmedName = name.trim()
+  const nextIcon = firstEmoji(icon)
   const nextExpenseGroupId = expenseGroups.length > 0 ? expenseGroupId : null
-  const unchanged = trimmedName === category.name && nextExpenseGroupId === category.expense_group_id
+  const unchanged = trimmedName === category.name
+    && nextIcon === (category.icon ?? null)
+    && nextExpenseGroupId === category.expense_group_id
   const missingExpenseGroup = expenseGroups.length > 0 && !expenseGroupId
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (!trimmedName || missingExpenseGroup || unchanged) return
-    if (await onSave(trimmedName, nextExpenseGroupId)) setOpen(false)
+    if (await onSave(trimmedName, nextExpenseGroupId, nextIcon)) setOpen(false)
   }
 
   const editorId = `category-editor-${category.id}`
   return <div className={`category-chip-editor ${category.category_type}`} ref={containerRef}>
     <button className="category-chip" type="button" aria-expanded={open} aria-controls={editorId} title="Tap to edit" onClick={() => {
       setName(category.name)
+      setIcon(category.icon ?? '')
       setExpenseGroupId(category.expense_group_id ?? '')
       setOpen((current) => !current)
-    }}><i aria-hidden="true" />{category.name}</button>
+    }}><CategoryIcon category={category} />{category.name}</button>
     {open && <form className="category-edit-popover" id={editorId} aria-label={`Edit ${category.name}`} onSubmit={(event) => void handleSubmit(event)}>
       <span className="compact-editor-label">Category name</span>
       <div className="compact-edit-field">
         <input ref={inputRef} value={name} onChange={(event) => setName(event.target.value)} aria-label={`Category name: ${category.name}`} maxLength={80} required />
         <button className="compact-save-button" type="submit" aria-label={`Save ${category.name}`} disabled={saving || !trimmedName || missingExpenseGroup || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}</button>
+      </div>
+      <div className="compact-icon-field">
+        <label className="compact-group-select">
+          <span>Icon</span>
+          <input className="compact-icon-input" value={icon} onChange={(event) => setIcon(event.target.value)} placeholder="🙂" aria-label={`Emoji for ${category.name}`} />
+        </label>
+        <div>
+          <p>{nextIcon ? 'Tap the field, then your keyboard’s emoji key.' : 'Optional — without one the colour dot stays.'}</p>
+          {nextIcon && <button type="button" className="compact-icon-clear" onClick={() => setIcon('')}>Remove</button>}
+        </div>
       </div>
       {expenseGroups.length > 0 && <label className="compact-group-select"><span>Main group</span><select value={expenseGroupId} onChange={(event) => setExpenseGroupId(event.target.value)} required>
         <option value="" disabled>Choose group</option>
@@ -1305,7 +1349,14 @@ function Dashboard({ session }: { session: Session }) {
     investment: '',
     expense: '',
   })
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
+  // A native dropdown ignores option colours on iOS, so the phone gets a sheet
+  // of its own where the main groups can actually be told apart by colour.
+  // Width is the right test here: this is about the size of the target, not
+  // whether a mouse is driving it.
+  const [compactPicker, setCompactPicker] = useState(() => window.matchMedia('(max-width: 560px)').matches)
   const entryDialogRef = useRef<HTMLDialogElement>(null)
+  const categoryPickerRef = useRef<HTMLDialogElement>(null)
   const categoryEntriesDialogRef = useRef<HTMLDialogElement>(null)
   const floatingAddButtonRef = useRef<HTMLButtonElement>(null)
   const firstTypeButtonRef = useRef<HTMLButtonElement>(null)
@@ -1335,6 +1386,26 @@ function Dashboard({ session }: { session: Session }) {
     if (entryDialogOpen && !dialog.open) dialog.showModal()
     if (!entryDialogOpen && dialog.open) dialog.close()
   }, [entryDialogOpen])
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 560px)')
+    const update = () => {
+      setCompactPicker(query.matches)
+      setCategoryPickerOpen(false)
+    }
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  useEffect(() => {
+    const dialog = categoryPickerRef.current
+    if (!dialog) return
+    if (categoryPickerOpen && !dialog.open) dialog.showModal()
+    if (!categoryPickerOpen && dialog.open) dialog.close()
+  }, [categoryPickerOpen])
+
+  // the sheet belongs to the entry form: closing the form closes it too
+  useEffect(() => { if (!entryDialogOpen) setCategoryPickerOpen(false) }, [entryDialogOpen])
 
   useEffect(() => {
     const dialog = categoryEntriesDialogRef.current
@@ -1670,6 +1741,7 @@ function Dashboard({ session }: { session: Session }) {
           return {
             id: category.id,
             name: category.name,
+            icon: category.icon ?? null,
             amount,
             percentage: total > 0 ? (amount / total) * 100 : 0,
             color: chartColors[index % chartColors.length],
@@ -1917,7 +1989,7 @@ function Dashboard({ session }: { session: Session }) {
     }
   }
 
-  async function saveCategory(category: FinancialCategory, nextName: string, nextExpenseGroupId: string | null) {
+  async function saveCategory(category: FinancialCategory, nextName: string, nextExpenseGroupId: string | null, nextIcon: string | null) {
     const trimmedName = nextName.trim()
     if (!trimmedName) return false
     if (groupsForType(category.category_type).length > 0 && !expenseGroups.some((group) => group.id === nextExpenseGroupId)) {
@@ -1946,6 +2018,7 @@ function Dashboard({ session }: { session: Session }) {
         .from('worthdelta_financial_categories')
         .update({
           name: trimmedName,
+          icon: nextIcon,
           expense_group_id: groupsForType(category.category_type).length > 0 ? nextExpenseGroupId : null,
         })
         .eq('id', category.id)
@@ -1953,7 +2026,7 @@ function Dashboard({ session }: { session: Session }) {
       if (error) throw error
 
       setCategories((current) => current.map((item) => item.id === category.id
-        ? { ...item, name: trimmedName, expense_group_id: groupsForType(category.category_type).length > 0 ? nextExpenseGroupId : null }
+        ? { ...item, name: trimmedName, icon: nextIcon, expense_group_id: groupsForType(category.category_type).length > 0 ? nextExpenseGroupId : null }
         : item))
 
       const remote = await refreshRemoteSnapshot(session.user.id)
@@ -2129,8 +2202,8 @@ function Dashboard({ session }: { session: Session }) {
   const handleDeleteLedgerEntry = (entry: LedgerEntry) => keepScrollPosition(() => removeLedgerEntry(entry))
   const handleUpdateLedgerEntry = (entry: LedgerEntry, nextAmount: number, nextDescription: string) =>
     keepScrollPosition(() => saveLedgerEntry(entry, nextAmount, nextDescription))
-  const handleUpdateCategory = (category: FinancialCategory, nextName: string, nextExpenseGroupId: string | null) =>
-    keepScrollPosition(() => saveCategory(category, nextName, nextExpenseGroupId))
+  const handleUpdateCategory = (category: FinancialCategory, nextName: string, nextExpenseGroupId: string | null, nextIcon: string | null) =>
+    keepScrollPosition(() => saveCategory(category, nextName, nextExpenseGroupId, nextIcon))
   const handleUpdateExpenseGroup = (group: ExpenseGroup, nextName: string) =>
     keepScrollPosition(() => saveExpenseGroup(group, nextName))
 
@@ -2139,6 +2212,18 @@ function Dashboard({ session }: { session: Session }) {
   const ungroupedTypeCategories = typeGroupList.length > 0
     ? filteredCategories.filter((category) => !typeGroupList.some((group) => group.id === category.expense_group_id))
     : []
+  const selectedCategory = filteredCategories.find((category) => category.name === categoryName) ?? null
+  // the same colours in the same order as the records tab, so a main group is
+  // recognised by its colour wherever it turns up
+  const pickerGroups = [
+    ...typeGroupList.map((group, index) => ({
+      id: group.id,
+      name: group.name,
+      color: expenseGroupColors[index % expenseGroupColors.length],
+      categories: filteredCategories.filter((category) => category.expense_group_id === group.id),
+    })),
+    { id: 'ungrouped', name: 'Unassigned', color: '#687386', categories: ungroupedTypeCategories },
+  ].filter((group) => group.categories.length > 0)
   const EntryTypeIcon = categoryMeta[type].icon
   const SelectedCategoryIcon = selectedCategoryEntries ? categoryMeta[selectedCategoryEntries.type].icon : Receipt
   const SyncIcon = syncStatus === 'offline'
@@ -2238,11 +2323,11 @@ function Dashboard({ session }: { session: Session }) {
                   const groupCategories = sectionCategories.filter((category) => category.expense_group_id === group.id)
                   return <section className={`expense-settings-group tone-${groupIndex % 2}`} key={group.id}>
                     <header><ExpenseGroupEditor group={group} saving={expenseGroupSavingId === group.id} onSave={(name) => handleUpdateExpenseGroup(group, name)} /><span>{groupCategories.length} {groupCategories.length === 1 ? 'category' : 'categories'}</span></header>
-                    {groupCategories.length === 0 ? <p className="expense-group-empty">No categories assigned.</p> : <div className="category-chip-list">{groupCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={settingsGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} onDelete={() => handleDeleteCategory(category)} historyMonths={categoryHistoryMonths(category)} />)}</div>}
+                    {groupCategories.length === 0 ? <p className="expense-group-empty">No categories assigned.</p> : <div className="category-chip-list">{groupCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={settingsGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId, icon) => handleUpdateCategory(category, name, expenseGroupId, icon)} onDelete={() => handleDeleteCategory(category)} historyMonths={categoryHistoryMonths(category)} />)}</div>}
                   </section>
                 })}
-                {unassignedSettingsCategories.length > 0 && <section className="expense-settings-group unassigned"><header><strong>Unassigned</strong><span>{unassignedSettingsCategories.length} categories</span></header><div className="category-chip-list">{unassignedSettingsCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={settingsGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} onDelete={() => handleDeleteCategory(category)} historyMonths={categoryHistoryMonths(category)} />)}</div></section>}
-              </div> : sectionCategories.length === 0 ? <p className="settings-empty">No categories here yet.</p> : <div className="category-chip-list section-category-chips">{sectionCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={settingsGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId) => handleUpdateCategory(category, name, expenseGroupId)} onDelete={() => handleDeleteCategory(category)} historyMonths={categoryHistoryMonths(category)} />)}</div>}
+                {unassignedSettingsCategories.length > 0 && <section className="expense-settings-group unassigned"><header><strong>Unassigned</strong><span>{unassignedSettingsCategories.length} categories</span></header><div className="category-chip-list">{unassignedSettingsCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={settingsGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId, icon) => handleUpdateCategory(category, name, expenseGroupId, icon)} onDelete={() => handleDeleteCategory(category)} historyMonths={categoryHistoryMonths(category)} />)}</div></section>}
+              </div> : sectionCategories.length === 0 ? <p className="settings-empty">No categories here yet.</p> : <div className="category-chip-list section-category-chips">{sectionCategories.map((category) => <CategoryEditor key={category.id} category={category} expenseGroups={settingsGroups} saving={categoryEditSavingId === category.id} onSave={(name, expenseGroupId, icon) => handleUpdateCategory(category, name, expenseGroupId, icon)} onDelete={() => handleDeleteCategory(category)} historyMonths={categoryHistoryMonths(category)} />)}</div>}
             </article>
           })}
         </section>
@@ -2273,10 +2358,19 @@ function Dashboard({ session }: { session: Session }) {
             <header className="entry-dialog-heading"><div><h2 id="entry-dialog-title">Add a new entry</h2></div><button type="button" onClick={() => setEntryDialogOpen(false)} aria-label="Close add entry form"><X aria-hidden="true" /></button></header>
             <form onSubmit={handleSave}>
               <div className={`entry-type-badge ${type}`}><EntryTypeIcon weight="duotone" aria-hidden="true" /><span>{categoryMeta[type].label}</span></div>
-              <label><span>Category</span><select value={categoryName} onChange={(event) => setCategoryName(event.target.value)} required><option value="" disabled>{filteredCategories.length ? 'Choose a category' : 'Add a category in Settings first'}</option>{typeGroupList.length > 0 ? <>
-                {typeGroupList.map((group) => { const groupCategories = filteredCategories.filter((category) => category.expense_group_id === group.id); return groupCategories.length > 0 ? <optgroup key={group.id} label={group.name}>{groupCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</optgroup> : null })}
-                {ungroupedTypeCategories.length > 0 && <optgroup label="Unassigned">{ungroupedTypeCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</optgroup>}
-              </> : filteredCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label>
+              {compactPicker
+                ? <div className="category-picker-field">
+                    <span id="entry-category-label">Category</span>
+                    <button className="category-picker-trigger" type="button" aria-haspopup="dialog" aria-labelledby="entry-category-label entry-category-value" disabled={filteredCategories.length === 0} onClick={() => setCategoryPickerOpen(true)}>
+                      {selectedCategory && <CategoryIcon category={selectedCategory} />}
+                      <span id="entry-category-value">{selectedCategory?.name ?? (filteredCategories.length ? 'Choose a category' : 'Add a category in Settings first')}</span>
+                      <CaretDown weight="bold" aria-hidden="true" />
+                    </button>
+                  </div>
+                : <label><span>Category</span><select value={categoryName} onChange={(event) => setCategoryName(event.target.value)} required><option value="" disabled>{filteredCategories.length ? 'Choose a category' : 'Add a category in Settings first'}</option>{typeGroupList.length > 0 ? <>
+                {typeGroupList.map((group) => { const groupCategories = filteredCategories.filter((category) => category.expense_group_id === group.id); return groupCategories.length > 0 ? <optgroup key={group.id} label={group.name}>{groupCategories.map((category) => <option key={category.id} value={category.name}>{optionLabel(category)}</option>)}</optgroup> : null })}
+                {ungroupedTypeCategories.length > 0 && <optgroup label="Unassigned">{ungroupedTypeCategories.map((category) => <option key={category.id} value={category.name}>{optionLabel(category)}</option>)}</optgroup>}
+              </> : filteredCategories.map((category) => <option key={category.id} value={category.name}>{optionLabel(category)}</option>)}</select></label>}
               {filteredCategories.length === 0 && <a className="dialog-settings-link" href="#settings" onClick={() => setEntryDialogOpen(false)}><GearSix aria-hidden="true" />Open category settings</a>}
               <label><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What did you buy?" maxLength={200} /></label>
               <div className="form-row"><label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} required /></label><label><span>Amount</span><div className="amount-field"><select value={currency} onChange={(event) => setCurrency(event.target.value)} aria-label="Currency">{CURRENCIES.map((code) => <option key={code} value={code}>{code}</option>)}</select><input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div></label></div>
@@ -2288,14 +2382,32 @@ function Dashboard({ session }: { session: Session }) {
                     ? `${formatCurrency(Number(amount || 0) * rate)} at 1 ${currency} = ${rate.toFixed(4)} MYR`
                     : `About ${formatCurrency(Number(amount || 0) * rate)} at ${rateStamp ? formatEntryDate(rateStamp) : 'an older'} rate — reconverted on sync.`}</p>}
               <label className="repeat-field"><span>Repeat</span><select value={repeatMonths} onChange={(event) => setRepeatMonths(Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => index + 1).map((months) => <option key={months} value={months}>{months === 1 ? 'This month only' : `${months} months — through ${formatMonth(`${addMonths(entryDate, months - 1).slice(0, 7)}-01`)}`}</option>)}</select></label>
-              <div className="entry-dialog-actions"><button className="dialog-cancel-button" type="button" onClick={() => setEntryDialogOpen(false)}>Cancel</button><button className="primary-action-button" type="submit" disabled={saving || !!loadError || filteredCategories.length === 0}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}Save entry</button></div>
+              <div className="entry-dialog-actions"><button className="dialog-cancel-button" type="button" onClick={() => setEntryDialogOpen(false)}>Cancel</button><button className="primary-action-button" type="submit" disabled={saving || !!loadError || !categoryName || filteredCategories.length === 0}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}Save entry</button></div>
             </form>
           </div>
         </dialog>
 
+        {compactPicker && <dialog className="category-picker-dialog" ref={categoryPickerRef} aria-labelledby="category-picker-title" onClose={() => setCategoryPickerOpen(false)} onCancel={() => setCategoryPickerOpen(false)} onClick={(event) => { if (event.target === event.currentTarget) setCategoryPickerOpen(false) }}>
+          <div className="category-picker-card">
+            <header className="category-picker-heading">
+              <div><p className="eyebrow">{categoryMeta[type].label}</p><h2 id="category-picker-title">Choose a category</h2></div>
+              <button type="button" onClick={() => setCategoryPickerOpen(false)} aria-label="Close category list"><X aria-hidden="true" /></button>
+            </header>
+            <div className="category-picker-list">
+              {pickerGroups.map((group) => <section className="category-picker-group" key={group.id} style={{ '--group-color': group.color } as React.CSSProperties}>
+                {typeGroupList.length > 0 && <header><i aria-hidden="true" />{group.name}</header>}
+                {group.categories.map((category) => <button key={category.id} className={`category-picker-option ${category.name === categoryName ? 'chosen' : ''}`} type="button" aria-pressed={category.name === categoryName} onClick={() => {
+                  setCategoryName(category.name)
+                  setCategoryPickerOpen(false)
+                }}><CategoryIcon category={category} /><span>{category.name}</span>{category.name === categoryName && <CheckCircle weight="fill" aria-hidden="true" />}</button>)}
+              </section>)}
+            </div>
+          </div>
+        </dialog>}
+
         <dialog className="entry-dialog category-entries-dialog" ref={categoryEntriesDialogRef} aria-labelledby="category-entries-title" onClose={() => setSelectedCategoryEntries(null)} onCancel={() => setSelectedCategoryEntries(null)} onClick={(event) => { if (event.target === event.currentTarget) setSelectedCategoryEntries(null) }}>
           {selectedCategoryEntries && selectedCategorySummary && <div className="entry-dialog-card category-entries-card">
-            <header className="entry-dialog-heading"><div><p className="eyebrow">{categoryMeta[selectedCategoryEntries.type].label} · {formatMonth(selectedCategoryEntries.period)}</p><h2 id="category-entries-title">{selectedCategorySummary.name}</h2><p>{categoryLedgerEntries.length} {categoryLedgerEntries.length === 1 ? 'entry' : 'entries'} · {formatCurrency(selectedCategorySummary.amount)} category total</p></div><button type="button" onClick={() => setSelectedCategoryEntries(null)} aria-label="Close category entries"><X aria-hidden="true" /></button></header>
+            <header className="entry-dialog-heading"><div><p className="eyebrow">{categoryMeta[selectedCategoryEntries.type].label} · {formatMonth(selectedCategoryEntries.period)}</p><h2 id="category-entries-title">{selectedCategorySummary.icon && <span className="heading-emoji" aria-hidden="true">{selectedCategorySummary.icon}</span>}{selectedCategorySummary.name}</h2><p>{categoryLedgerEntries.length} {categoryLedgerEntries.length === 1 ? 'entry' : 'entries'} · {formatCurrency(selectedCategorySummary.amount)} category total</p></div><button type="button" onClick={() => setSelectedCategoryEntries(null)} aria-label="Close category entries"><X aria-hidden="true" /></button></header>
             <div className={`entry-type-badge ${selectedCategoryEntries.type}`}><SelectedCategoryIcon weight="duotone" aria-hidden="true" /><span>Amount and remark details</span></div>
             {categoryLedgerEntries.length === 0 ? <div className="category-entry-empty"><Receipt aria-hidden="true" /><strong>No itemised entries for this month</strong><p>The category total exists, but no amount-and-remark breakdown is available.</p></div> : <div className="category-entry-list">{categoryLedgerEntries.map((entry) => <EditableLedgerEntryRow key={entry.id} entry={entry} saving={entryEditSavingId === entry.id} onSave={handleUpdateLedgerEntry} onDelete={handleDeleteLedgerEntry} />)}</div>}
           </div>}
