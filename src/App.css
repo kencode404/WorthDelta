@@ -592,10 +592,13 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .entry-dialog form { gap: 9px; }
   .entry-dialog label { gap: 4px; font-size: 11px; }
   .entry-dialog input, .entry-dialog select { min-height: 38px; padding: 0 10px; border-radius: 11px; font-size: 14px; }
-  .entry-dialog .amount-field { grid-template-columns: 70px minmax(0, 1fr); gap: 6px; }
-  .entry-dialog .amount-field select { font-size: 12px; }
-  .entry-dialog .form-row { grid-template-columns: minmax(0, 1.02fr) minmax(0, .98fr); gap: 8px; }
-  .entry-dialog input[type="date"] { min-width: 0; padding: 0 6px; font-size: 13px; }
+  .entry-dialog .amount-field { grid-template-columns: 66px minmax(0, 1fr); gap: 6px; }
+  .entry-dialog .amount-field select { padding: 0 4px 0 8px; font-size: 12px; }
+  .entry-dialog .form-row { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; }
+  .entry-dialog input[type="date"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; padding: 0 8px; overflow: hidden; font-size: 13px; }
+  .entry-dialog input[type="date"]::-webkit-datetime-edit { min-width: 0; padding: 0; overflow: hidden; }
+  .entry-dialog input[type="date"]::-webkit-date-and-time-value { margin: 0; text-align: left; }
+  .entry-dialog input[type="date"]::-webkit-calendar-picker-indicator { flex: 0 0 auto; margin-left: 2px; padding: 0; }
   .entry-dialog .amount-field input { padding: 0 8px; }
   .entry-dialog .entry-type-badge { min-height: 38px; padding: 0 12px; font-size: 12px; }
   .entry-dialog .entry-dialog-actions { grid-template-columns: minmax(88px, .45fr) minmax(0, 1fr); gap: 9px; margin-top: 1px; }
