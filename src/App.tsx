@@ -43,6 +43,7 @@ import {
   verifyBiometric,
   verifyPin,
 } from './lib/appLock'
+import { clearEvents, describeEvents, logEvent } from './lib/diagnostics'
 import { fetchMyrRate } from './lib/exchangeRate'
 import { captureChartImage, downloadWorkbook } from './lib/exportWorkbook'
 import { ensureFreshSession, isExpiredTokenError, supabase } from './lib/supabase'
@@ -1254,23 +1255,38 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [checking, setChecking] = useState(false)
   const biometric = hasBiometric()
 
-  const tryBiometric = useCallback(async () => {
+  const tryBiometric = useCallback(async (source: string) => {
     try {
-      if (await verifyBiometric()) onUnlock()
+      if (await verifyBiometric(source)) onUnlock()
     } catch {
       setError('Face ID or fingerprint was not accepted. Enter your PIN, or tap to try again.')
     }
   }, [onUnlock])
+
+  useEffect(() => { logEvent('lock screen shown', biometric ? 'with a saved credential' : 'PIN only') }, [biometric])
 
   // Ask once, as the lock appears. A repeat here costs a second face scan, so
   // the guard has to hold across re-renders as well as across the remount a
   // late re-lock can cause.
   const promptedRef = useRef(false)
   useEffect(() => {
-    if (!biometric || promptedRef.current || document.visibilityState !== 'visible') return
+    if (!biometric || promptedRef.current) return
+    if (document.visibilityState !== 'visible') return logEvent('auto prompt held back', 'page is not visible')
     promptedRef.current = true
-    void tryBiometric()
+    void tryBiometric('opened')
   }, [biometric, tryBiometric])
+
+  // Nowhere to read a console on a phone, so the trail comes out here: three
+  // taps on the mark.
+  const [log, setLog] = useState('')
+  const tapsRef = useRef<number[]>([])
+  const revealLog = () => {
+    tapsRef.current = [...tapsRef.current, Date.now()].filter((tap) => Date.now() - tap < 1500)
+    if (tapsRef.current.length >= 3) {
+      tapsRef.current = []
+      setLog(describeEvents() || 'Nothing recorded yet.')
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -1287,7 +1303,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   return (
     <main className="lock-screen">
       <form className="lock-card" onSubmit={(event) => void handleSubmit(event)}>
-        <span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
+        <span className="brand-mark app-icon-mark" aria-hidden="true" onClick={revealLog}><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
         <h1>WorthDelta is locked</h1>
         <p>Enter your 4-digit PIN to continue.</p>
         <input
@@ -1305,7 +1321,15 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
         />
         {error && <p className="form-alert error" role="alert">{error}</p>}
         <button className="primary-action-button" type="submit" disabled={pin.length !== 4 || checking}>Unlock</button>
-        {biometric && <button className="lock-biometric" type="button" onClick={() => void tryBiometric()}>Use Face ID or fingerprint</button>}
+        {biometric && <button className="lock-biometric" type="button" onClick={() => void tryBiometric('tapped')}>Use Face ID or fingerprint</button>}
+        {log && <div className="lock-log">
+          <div className="lock-log-actions">
+            <button type="button" onClick={() => void navigator.clipboard?.writeText(log)}>Copy</button>
+            <button type="button" onClick={() => { clearEvents(); setLog('') }}>Clear</button>
+            <button type="button" onClick={() => setLog('')}>Hide</button>
+          </div>
+          <pre>{log}</pre>
+        </div>}
       </form>
     </main>
   )
@@ -2430,11 +2454,13 @@ function App() {
   const unlockedRef = useRef(false)
 
   const handleUnlock = useCallback(() => {
+    logEvent('unlocked')
     unlockedRef.current = true
     setLocked(false)
   }, [])
 
-  const relock = useCallback(() => {
+  const relock = useCallback((reason: string) => {
+    logEvent('re-locked', reason)
     unlockedRef.current = false
     setLocked(true)
   }, [])
@@ -2445,16 +2471,18 @@ function App() {
   useEffect(() => {
     const RELOCK_AFTER = 45_000
     const handleVisibility = () => {
+      logEvent('visibility', document.visibilityState)
       if (document.visibilityState === 'hidden') {
         hiddenSinceRef.current = Date.now()
         return
       }
       const hiddenSince = hiddenSinceRef.current
       hiddenSinceRef.current = null
-      if (hasPin() && hiddenSince && Date.now() - hiddenSince > RELOCK_AFTER) relock()
+      if (hasPin() && hiddenSince && Date.now() - hiddenSince > RELOCK_AFTER) relock(`away for ${Math.round((Date.now() - hiddenSince) / 1000)}s`)
     }
     const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted && hasPin()) relock()
+      logEvent('pageshow', event.persisted ? 'restored from the back/forward cache' : 'fresh load')
+      if (event.persisted && hasPin()) relock('restored from the back/forward cache')
     }
     document.addEventListener('visibilitychange', handleVisibility)
     window.addEventListener('pageshow', handlePageShow)
@@ -2465,12 +2493,17 @@ function App() {
   }, [relock])
 
   useEffect(() => {
+    logEvent('app started', `${window.matchMedia('(display-mode: standalone)').matches ? 'installed' : 'browser'} · ${(performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type ?? 'unknown'} · ${document.visibilityState} · locked=${hasPin()}`)
     void supabase.auth.getSession().then(({ data }) => {
+      logEvent('session read', data.session ? 'signed in' : 'no session')
       setSession(data.session)
       setLoading(false)
-      if (data.session) void syncPinFromServer().then((locksOnServer) => { if (locksOnServer && !unlockedRef.current) setLocked(true) })
+      if (data.session) void syncPinFromServer().then((locksOnServer) => {
+        logEvent('PIN synced', `server says ${locksOnServer ? 'locked' : 'no PIN'}, already unlocked=${unlockedRef.current}`)
+        if (locksOnServer && !unlockedRef.current) setLocked(true)
+      })
     })
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => { setSession(nextSession); setLoading(false) })
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => { logEvent('auth event', event); setSession(nextSession); setLoading(false) })
     return () => data.subscription.unsubscribe()
   }, [])
 

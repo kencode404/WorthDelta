@@ -10,6 +10,7 @@
  */
 
 import { supabase } from './supabase'
+import { logEvent } from './diagnostics'
 
 const PIN_KEY = 'worthdelta-lock'
 const BIOMETRIC_KEY = 'worthdelta-lock-biometric'
@@ -141,14 +142,22 @@ export function clearBiometric() {
  */
 let openCheck: Promise<boolean> | null = null
 
-export function verifyBiometric() {
-  openCheck ??= runBiometric().finally(() => { openCheck = null })
+export function verifyBiometric(source: string) {
+  if (openCheck) {
+    logEvent('face check joined one already running', source)
+    return openCheck
+  }
+  openCheck = runBiometric(source).finally(() => { openCheck = null })
   return openCheck
 }
 
-async function runBiometric() {
+async function runBiometric(source: string) {
   const stored = window.localStorage.getItem(BIOMETRIC_KEY)
-  if (!stored) return false
+  if (!stored) {
+    logEvent('face check skipped', 'no credential on this device')
+    return false
+  }
+  logEvent('credentials.get called', `${source} · ${navigator.userActivation?.isActive ? 'from a tap' : 'no user gesture'}`)
   const assertion = await navigator.credentials.get({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
@@ -158,6 +167,11 @@ async function runBiometric() {
       userVerification: 'required',
       timeout: 60000,
     },
+  }).catch((error: unknown) => {
+    const failure = error as { name?: string; message?: string }
+    logEvent('credentials.get failed', `${failure?.name ?? 'Error'}: ${failure?.message ?? ''}`)
+    throw error
   })
+  logEvent('credentials.get returned', assertion ? 'assertion signed' : 'nothing returned')
   return assertion !== null
 }

@@ -673,3 +673,44 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .security-form input { max-width: none; }
   .security-actions .primary-action-button, .security-actions .dialog-cancel-button { flex: 1 1 auto; }
 }
+
+/* the trail behind three taps on the lock mark: plain, dense, easy to read on a
+   phone and easy to copy out of one */
+.lock-log {
+  width: 100%;
+  margin-top: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.04);
+  text-align: left;
+}
+
+.lock-log-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.lock-log-actions button {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  border-radius: 0.5rem;
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  color: inherit;
+}
+
+.lock-log pre {
+  max-height: 45vh;
+  margin: 0;
+  padding: 0.5rem;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.65rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
