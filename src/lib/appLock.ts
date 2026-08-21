@@ -186,7 +186,15 @@ async function runBiometric(source: string) {
       // the face again. Asking for nothing in particular goes straight to that
       // sheet, where one reading does the whole job. Which passkey answered is
       // checked below, so the lock is no looser for not having asked.
-      userVerification: 'required',
+      //
+      // 'preferred', not 'required', for the same reason. Asking iOS to verify
+      // the user is asking for a face reading of its own, which it does as the
+      // sheet opens and which settles nothing, because using an Apple passkey
+      // means being verified regardless. The demand only buys a second reading.
+      // What the demand was for is taken from the answer instead: the
+      // authenticator says whether it verified anyone, and an answer that says
+      // it did not is refused below.
+      userVerification: 'preferred',
       timeout: 60000,
     },
   }).catch((error: unknown) => {
@@ -200,8 +208,15 @@ async function runBiometric(source: string) {
   }
   // The sheet offers every passkey this site has, so being answered is not the
   // same as being answered by the one that set this lock up.
-  const answered = toBase64((assertion as PublicKeyCredential).rawId)
-  const mine = answered === stored.id
-  logEvent('credentials.get returned', mine ? 'the lock\'s own passkey' : 'a different passkey for this site')
-  return mine
+  const credential = assertion as PublicKeyCredential
+  const mine = toBase64(credential.rawId) === stored.id
+
+  // Byte 32 of the authenticator's data carries its flags, and 0x04 is the one
+  // that says a person was verified — a face, a finger, or a device passcode.
+  // Nothing opens this lock without it.
+  const flags = new Uint8Array((credential.response as AuthenticatorAssertionResponse).authenticatorData)[32]
+  const verified = (flags & 0x04) !== 0
+
+  logEvent('credentials.get returned', `${mine ? "the lock's own passkey" : 'a different passkey for this site'} · ${verified ? 'person verified' : 'nobody verified'}`)
+  return mine && verified
 }

@@ -1255,7 +1255,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const APP_VERSION = '1.08'
+const APP_VERSION = '1.09'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
