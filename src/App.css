@@ -735,3 +735,11 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   width: 1.25rem;
   height: 1.25rem;
 }
+
+/* small enough to ignore, large enough to read back over a chat */
+.lock-build {
+  margin: 0.5rem 0 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  opacity: 0.45;
+}

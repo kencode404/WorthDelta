@@ -1250,6 +1250,13 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
   )
 }
 
+/**
+ * Shown small on the lock screen. A phone keeps the app it already has, so when
+ * the lock behaves differently from the code this is what says which of the two
+ * is actually running. Bump it with any change to how the lock opens.
+ */
+const LOCK_BUILD = 'B6'
+
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
   const [error, setError] = useState('')
@@ -1342,6 +1349,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
         />
         {error && <p className="form-alert error" role="alert">{error}</p>}
         <button className="primary-action-button" type="submit" disabled={pin.length !== 4 || checking}>Unlock</button>
+        <p className="lock-build">{LOCK_BUILD}</p>
         {log && <div className="lock-log">
           <div className="lock-log-actions">
             <button type="button" onClick={() => void navigator.clipboard?.writeText(log)}>Copy</button>
