@@ -1255,7 +1255,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const LOCK_BUILD = 'B7'
+const APP_VERSION = '1.07'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
@@ -1357,7 +1357,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
         {biometric && <button className="lock-alternative" type="button" onClick={() => { setError(''); setShowPin(!showPin) }}>
           {showPin ? 'Use Face ID' : 'Use PIN instead'}
         </button>}
-        <p className="lock-build">{LOCK_BUILD}</p>
+        <p className="lock-build">v{APP_VERSION}</p>
         {log && <div className="lock-log">
           <div className="lock-log-actions">
             <button type="button" onClick={() => void navigator.clipboard?.writeText(log)}>Copy</button>

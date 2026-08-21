@@ -125,7 +125,25 @@ export async function registerBiometric(userId: string, label: string) {
     },
   }) as PublicKeyCredential | null
   if (!credential) throw new Error('Setup was cancelled.')
-  window.localStorage.setItem(BIOMETRIC_KEY, toBase64(credential.rawId))
+  // Keep the ways the authenticator says it can be reached. Claiming it is
+  // reachable one way when the platform believes otherwise sends iOS looking for
+  // a credential it cannot find that way, and it falls back to asking which
+  // passkey to sign in with.
+  const transports = (credential.response as AuthenticatorAttestationResponse).getTransports?.() ?? []
+  window.localStorage.setItem(BIOMETRIC_KEY, JSON.stringify({ id: toBase64(credential.rawId), transports }))
+}
+
+/** The stored credential, from either shape: a bare id, or an id with transports. */
+function storedCredential() {
+  const raw = window.localStorage.getItem(BIOMETRIC_KEY)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as { id?: string; transports?: AuthenticatorTransport[] }
+    if (parsed?.id) return { id: parsed.id, transports: parsed.transports ?? [] }
+  } catch {
+    // written before transports were kept: the whole value is the id
+  }
+  return { id: raw, transports: [] as AuthenticatorTransport[] }
 }
 
 export function clearBiometric() {
@@ -152,18 +170,24 @@ export function verifyBiometric(source: string) {
 }
 
 async function runBiometric(source: string) {
-  const stored = window.localStorage.getItem(BIOMETRIC_KEY)
+  const stored = storedCredential()
   if (!stored) {
     logEvent('face check skipped', 'no credential on this device')
     return false
   }
-  logEvent('credentials.get called', `${source} · ${navigator.userActivation?.isActive ? 'from a tap' : 'no user gesture'}`)
+  logEvent('credentials.get called', `${source} · ${navigator.userActivation?.isActive ? 'from a tap' : 'no user gesture'} · transports=${stored.transports.join(',') || 'unstated'}`)
   const assertion = await navigator.credentials.get({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      // naming the one credential, on this device only, leaves the platform
-      // nothing to ask about before it checks the face or finger
-      allowCredentials: [{ type: 'public-key', id: fromBase64(stored), transports: ['internal'] }],
+      // Naming the one credential leaves the platform nothing to choose between.
+      // Its transports are left as the authenticator stated them, or unstated,
+      // rather than asserted here: a wrong guess is what makes iOS give up
+      // looking and ask which passkey to sign in with instead.
+      allowCredentials: [{
+        type: 'public-key',
+        id: fromBase64(stored.id),
+        ...(stored.transports.length ? { transports: stored.transports } : {}),
+      }],
       userVerification: 'required',
       timeout: 60000,
     },
