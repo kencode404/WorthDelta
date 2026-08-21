@@ -1234,9 +1234,9 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
         <p>A 4-digit PIN asked for every time WorthDelta opens. It guards this device only — your data is still protected by your sign-in.</p>
       </div>
       <form className="security-form" onSubmit={(event) => void handleSave(event)}>
-        {pinSet && <label><span>Current PIN</span><input value={current} onChange={(event) => setCurrent(onlyDigits(event.target.value))} type="password" inputMode="numeric" autoComplete="off" /></label>}
-        <label><span>{pinSet ? 'New PIN' : 'PIN'}</span><input value={next} onChange={(event) => setNext(onlyDigits(event.target.value))} type="password" inputMode="numeric" autoComplete="off" /></label>
-        <label><span>Confirm</span><input value={confirm} onChange={(event) => setConfirm(onlyDigits(event.target.value))} type="password" inputMode="numeric" autoComplete="off" /></label>
+        {pinSet && <label><span>Current PIN</span><input value={current} onChange={(event) => setCurrent(onlyDigits(event.target.value))} type="text" inputMode="numeric" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} className="pin-input" /></label>}
+        <label><span>{pinSet ? 'New PIN' : 'PIN'}</span><input value={next} onChange={(event) => setNext(onlyDigits(event.target.value))} type="text" inputMode="numeric" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} className="pin-input" /></label>
+        <label><span>Confirm</span><input value={confirm} onChange={(event) => setConfirm(onlyDigits(event.target.value))} type="text" inputMode="numeric" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} className="pin-input" /></label>
         <div className="security-actions">
           <button className="primary-action-button" type="submit">{pinSet ? 'Change PIN' : 'Turn on PIN'}</button>
           {pinSet && <button className="dialog-cancel-button" type="button" onClick={() => void handleTurnOff()}>Turn off</button>}
@@ -1255,12 +1255,20 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [checking, setChecking] = useState(false)
   const biometric = hasBiometric()
 
+  const [askingFace, setAskingFace] = useState(false)
+  const pinRef = useRef<HTMLInputElement>(null)
+
   const tryBiometric = useCallback(async (source: string) => {
+    setAskingFace(true)
     try {
-      if (await verifyBiometric(source)) onUnlock()
+      if (await verifyBiometric(source)) return onUnlock()
     } catch {
       setError('Face ID or fingerprint was not accepted. Enter your PIN, or tap to try again.')
+    } finally {
+      setAskingFace(false)
     }
+    // the face is out of the way; now the keyboard can come up
+    pinRef.current?.focus()
   }, [onUnlock])
 
   useEffect(() => { logEvent('lock screen shown', biometric ? 'with a saved credential' : 'PIN only') }, [biometric])
@@ -1306,18 +1314,31 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
         <span className="brand-mark app-icon-mark" aria-hidden="true" onClick={revealLog}><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
         <h1>WorthDelta is locked</h1>
         <p>Enter your 4-digit PIN to continue.</p>
+        {/*
+          Not type="password", and not focused while the face is being checked.
+          iOS offers a saved passkey whenever a password field takes focus on a
+          domain that has one, which is a second sign-in prompt on top of the one
+          this screen already made, and a second face scan behind it. A text
+          field masked in CSS asks iOS for nothing.
+        */}
         <input
-          className="lock-input"
+          ref={pinRef}
+          className="lock-input pin-input"
           value={pin}
           onChange={(event) => {
             setPinValue(event.target.value.replace(/\D/g, '').slice(0, 4))
             setError('')
           }}
-          type="password"
+          type="text"
           inputMode="numeric"
           autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          name="worthdelta-lock-code"
           aria-label="PIN"
-          autoFocus
+          autoFocus={!biometric}
+          readOnly={askingFace}
         />
         {error && <p className="form-alert error" role="alert">{error}</p>}
         <button className="primary-action-button" type="submit" disabled={pin.length !== 4 || checking}>Unlock</button>

@@ -714,3 +714,10 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* A PIN box that iOS does not read as a sign-in field: masked here rather than
+   by type="password", which is what makes it offer a saved passkey on focus. */
+.pin-input {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
