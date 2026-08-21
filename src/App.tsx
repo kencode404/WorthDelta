@@ -1255,7 +1255,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const APP_VERSION = '1.07'
+const APP_VERSION = '1.08'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
@@ -1271,8 +1271,10 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
     setAskingFace(true)
     try {
       if (await verifyBiometric(source)) return onUnlock()
+      // answered, but by some other passkey this site holds
+      setError('That passkey does not open this lock. Try again and pick the WorthDelta one, or use your PIN.')
     } catch {
-      setError('Face ID or fingerprint was not accepted. Enter your PIN, or tap to try again.')
+      setError('Face ID did not open the lock. Try again, or use your PIN.')
     } finally {
       setAskingFace(false)
     }

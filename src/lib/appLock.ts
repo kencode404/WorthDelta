@@ -25,7 +25,6 @@ const toHex = (buffer: ArrayBuffer) =>
 
 const toBase64 = (buffer: ArrayBuffer) => window.btoa(String.fromCharCode(...new Uint8Array(buffer)))
 
-const fromBase64 = (value: string) => Uint8Array.from(window.atob(value), (character) => character.charCodeAt(0))
 
 async function digest(pin: string, salt: string) {
   const data = new TextEncoder().encode(`${salt}:${pin}`)
@@ -102,10 +101,10 @@ export async function biometricAvailable() {
  * Registers this device's own authenticator: Face ID, Touch ID or Android
  * biometrics.
  *
- * residentKey is 'discouraged' on purpose. A discoverable credential is stored
- * as an iCloud passkey, and unlocking one makes the platform show an account
- * chooser first. A device-bound credential skips that sheet and goes straight to
- * the face or finger check, which is all this lock needs.
+ * residentKey is 'discouraged' because a lock on one phone has no use for a
+ * credential that travels. iOS pays no attention: it saves a passkey to iCloud
+ * either way, shows its own sheet when that passkey is used, and there is no
+ * asking it not to. The hint stays for the platforms that do honour it.
  */
 export async function registerBiometric(userId: string, label: string) {
   const credential = await navigator.credentials.create({
@@ -175,19 +174,18 @@ async function runBiometric(source: string) {
     logEvent('face check skipped', 'no credential on this device')
     return false
   }
-  logEvent('credentials.get called', `${source} · ${navigator.userActivation?.isActive ? 'from a tap' : 'no user gesture'} · transports=${stored.transports.join(',') || 'unstated'}`)
+  logEvent('credentials.get called', `${source} · ${navigator.userActivation?.isActive ? 'from a tap' : 'no user gesture'}`)
   const assertion = await navigator.credentials.get({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      // Naming the one credential leaves the platform nothing to choose between.
-      // Its transports are left as the authenticator stated them, or unstated,
-      // rather than asserted here: a wrong guess is what makes iOS give up
-      // looking and ask which passkey to sign in with instead.
-      allowCredentials: [{
-        type: 'public-key',
-        id: fromBase64(stored.id),
-        ...(stored.transports.length ? { transports: stored.transports } : {}),
-      }],
+      // No allowCredentials on purpose.
+      //
+      // Naming the credential was meant to save a step, and on iOS it costs
+      // one: the face is read to go looking for what was named, the search
+      // settles nothing, and iOS falls back to its own passkey sheet and reads
+      // the face again. Asking for nothing in particular goes straight to that
+      // sheet, where one reading does the whole job. Which passkey answered is
+      // checked below, so the lock is no looser for not having asked.
       userVerification: 'required',
       timeout: 60000,
     },
@@ -196,6 +194,14 @@ async function runBiometric(source: string) {
     logEvent('credentials.get failed', `${failure?.name ?? 'Error'}: ${failure?.message ?? ''}`)
     throw error
   })
-  logEvent('credentials.get returned', assertion ? 'assertion signed' : 'nothing returned')
-  return assertion !== null
+  if (!assertion) {
+    logEvent('credentials.get returned', 'nothing returned')
+    return false
+  }
+  // The sheet offers every passkey this site has, so being answered is not the
+  // same as being answered by the one that set this lock up.
+  const answered = toBase64((assertion as PublicKeyCredential).rawId)
+  const mine = answered === stored.id
+  logEvent('credentials.get returned', mine ? 'the lock\'s own passkey' : 'a different passkey for this site')
+  return mine
 }
