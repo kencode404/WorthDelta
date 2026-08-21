@@ -7,6 +7,7 @@ import {
   DownloadSimple,
   ChartLineUp,
   CloudArrowUp,
+  Fingerprint,
   Database,
   GearSix,
   List,
@@ -1273,16 +1274,12 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
 
   useEffect(() => { logEvent('lock screen shown', biometric ? 'with a saved credential' : 'PIN only') }, [biometric])
 
-  // Ask once, as the lock appears. A repeat here costs a second face scan, so
-  // the guard has to hold across re-renders as well as across the remount a
-  // late re-lock can cause.
-  const promptedRef = useRef(false)
-  useEffect(() => {
-    if (!biometric || promptedRef.current) return
-    if (document.visibilityState !== 'visible') return logEvent('auto prompt held back', 'page is not visible')
-    promptedRef.current = true
-    void tryBiometric('opened')
-  }, [biometric, tryBiometric])
+  // The face is asked for on a tap, never on its own.
+  //
+  // iOS treats a credential request that no tap asked for as something to
+  // confirm first, so it puts up its own sign-in sheet and reads the face after
+  // that — on top of whatever the phone already read when the app opened. A tap
+  // carries the permission with it and goes straight to the scan.
 
   // Nowhere to read a console on a phone, so the trail comes out here: three
   // taps on the mark.
@@ -1313,7 +1310,10 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
       <form className="lock-card" onSubmit={(event) => void handleSubmit(event)}>
         <span className="brand-mark app-icon-mark" aria-hidden="true" onClick={revealLog}><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
         <h1>WorthDelta is locked</h1>
-        <p>Enter your 4-digit PIN to continue.</p>
+        <p>{biometric ? 'Unlock with Face ID, or enter your 4-digit PIN.' : 'Enter your 4-digit PIN to continue.'}</p>
+        {biometric && <button className="primary-action-button lock-face-button" type="button" disabled={askingFace} onClick={() => void tryBiometric('tapped')}>
+          <Fingerprint weight="duotone" aria-hidden="true" />{askingFace ? 'Checking…' : 'Unlock with Face ID'}
+        </button>}
         {/*
           Not type="password", and not focused while the face is being checked.
           iOS offers a saved passkey whenever a password field takes focus on a
@@ -1342,7 +1342,6 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
         />
         {error && <p className="form-alert error" role="alert">{error}</p>}
         <button className="primary-action-button" type="submit" disabled={pin.length !== 4 || checking}>Unlock</button>
-        {biometric && <button className="lock-biometric" type="button" onClick={() => void tryBiometric('tapped')}>Use Face ID or fingerprint</button>}
         {log && <div className="lock-log">
           <div className="lock-log-actions">
             <button type="button" onClick={() => void navigator.clipboard?.writeText(log)}>Copy</button>

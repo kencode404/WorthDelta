@@ -721,3 +721,17 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   -webkit-text-security: disc;
   text-security: disc;
 }
+
+/* Face ID leads on the lock screen; the PIN is the way round it */
+.lock-face-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.lock-face-button svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
