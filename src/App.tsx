@@ -1255,7 +1255,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const LOCK_BUILD = 'B6'
+const LOCK_BUILD = 'B7'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
@@ -1264,6 +1264,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const biometric = hasBiometric()
 
   const [askingFace, setAskingFace] = useState(false)
+  const [showPin, setShowPin] = useState(!biometric)
   const pinRef = useRef<HTMLInputElement>(null)
 
   const tryBiometric = useCallback(async (source: string) => {
@@ -1275,8 +1276,8 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
     } finally {
       setAskingFace(false)
     }
-    // the face is out of the way; now the keyboard can come up
-    pinRef.current?.focus()
+    // the face did not open it; offer the keys instead
+    setShowPin(true)
   }, [onUnlock])
 
   useEffect(() => { logEvent('lock screen shown', biometric ? 'with a saved credential' : 'PIN only') }, [biometric])
@@ -1317,38 +1318,45 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
       <form className="lock-card" onSubmit={(event) => void handleSubmit(event)}>
         <span className="brand-mark app-icon-mark" aria-hidden="true" onClick={revealLog}><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
         <h1>WorthDelta is locked</h1>
-        <p>{biometric ? 'Unlock with Face ID, or enter your 4-digit PIN.' : 'Enter your 4-digit PIN to continue.'}</p>
-        {biometric && <button className="primary-action-button lock-face-button" type="button" disabled={askingFace} onClick={() => void tryBiometric('tapped')}>
+        <p>{showPin ? 'Enter your 4-digit PIN to continue.' : 'Unlock with Face ID to continue.'}</p>
+
+        {/* One way in at a time: the face by default, the PIN for anyone who asks for it */}
+        {!showPin && <button className="primary-action-button lock-face-button" type="button" disabled={askingFace} onClick={() => void tryBiometric('tapped')}>
           <Fingerprint weight="duotone" aria-hidden="true" />{askingFace ? 'Checking…' : 'Unlock with Face ID'}
         </button>}
-        {/*
-          Not type="password", and not focused while the face is being checked.
-          iOS offers a saved passkey whenever a password field takes focus on a
-          domain that has one, which is a second sign-in prompt on top of the one
-          this screen already made, and a second face scan behind it. A text
-          field masked in CSS asks iOS for nothing.
-        */}
-        <input
-          ref={pinRef}
-          className="lock-input pin-input"
-          value={pin}
-          onChange={(event) => {
-            setPinValue(event.target.value.replace(/\D/g, '').slice(0, 4))
-            setError('')
-          }}
-          type="text"
-          inputMode="numeric"
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          spellCheck={false}
-          name="worthdelta-lock-code"
-          aria-label="PIN"
-          autoFocus={!biometric}
-          readOnly={askingFace}
-        />
+
+        {showPin && <>
+          {/*
+            Not type="password". iOS offers a saved passkey whenever a password
+            field takes focus on a domain that has one, which is a sign-in prompt
+            nobody asked for. A text field masked in CSS asks iOS for nothing.
+          */}
+          <input
+            ref={pinRef}
+            className="lock-input pin-input"
+            value={pin}
+            onChange={(event) => {
+              setPinValue(event.target.value.replace(/\D/g, '').slice(0, 4))
+              setError('')
+            }}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            name="worthdelta-lock-code"
+            aria-label="PIN"
+            autoFocus
+          />
+          <button className="primary-action-button" type="submit" disabled={pin.length !== 4 || checking}>Unlock</button>
+        </>}
+
         {error && <p className="form-alert error" role="alert">{error}</p>}
-        <button className="primary-action-button" type="submit" disabled={pin.length !== 4 || checking}>Unlock</button>
+
+        {biometric && <button className="lock-alternative" type="button" onClick={() => { setError(''); setShowPin(!showPin) }}>
+          {showPin ? 'Use Face ID' : 'Use PIN instead'}
+        </button>}
         <p className="lock-build">{LOCK_BUILD}</p>
         {log && <div className="lock-log">
           <div className="lock-log-actions">

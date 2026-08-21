@@ -743,3 +743,15 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   letter-spacing: 0.08em;
   opacity: 0.45;
 }
+
+/* the quieter way in, under whichever one is on offer */
+.lock-alternative {
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--accent, #2563eb);
+  text-decoration: underline;
+}
