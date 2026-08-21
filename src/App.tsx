@@ -1255,7 +1255,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const APP_VERSION = '1.09'
+const APP_VERSION = '1.10'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
@@ -1278,18 +1278,22 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
     } finally {
       setAskingFace(false)
     }
-    // the face did not open it; offer the keys instead
-    setShowPin(true)
+    // it did not open; the button is still there to try again, and the PIN is a
+    // tap away under it
   }, [onUnlock])
 
   useEffect(() => { logEvent('lock screen shown', biometric ? 'with a saved credential' : 'PIN only') }, [biometric])
 
-  // The face is asked for on a tap, never on its own.
-  //
-  // iOS treats a credential request that no tap asked for as something to
-  // confirm first, so it puts up its own sign-in sheet and reads the face after
-  // that — on top of whatever the phone already read when the app opened. A tap
-  // carries the permission with it and goes straight to the scan.
+  // Asked for on sight of the lock, so opening the app is the only thing to do.
+  // Once, and only while the app is on screen: a request made to a phone that is
+  // not looking at it is a sheet waiting to be found later.
+  const askedRef = useRef(false)
+  useEffect(() => {
+    if (!biometric || askedRef.current) return
+    if (document.visibilityState !== 'visible') return logEvent('opening prompt held back', 'app is not on screen')
+    askedRef.current = true
+    void tryBiometric('opened')
+  }, [biometric, tryBiometric])
 
   // Nowhere to read a console on a phone, so the trail comes out here: three
   // taps on the mark.
@@ -1320,7 +1324,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
       <form className="lock-card" onSubmit={(event) => void handleSubmit(event)}>
         <span className="brand-mark app-icon-mark" aria-hidden="true" onClick={revealLog}><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
         <h1>WorthDelta is locked</h1>
-        <p>{showPin ? 'Enter your 4-digit PIN to continue.' : 'Unlock with Face ID to continue.'}</p>
+        <p>{showPin ? 'Enter your 4-digit PIN to continue.' : askingFace ? 'Checking your face…' : 'Unlock with Face ID to continue.'}</p>
 
         {/* One way in at a time: the face by default, the PIN for anyone who asks for it */}
         {!showPin && <button className="primary-action-button lock-face-button" type="button" disabled={askingFace} onClick={() => void tryBiometric('tapped')}>
