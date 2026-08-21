@@ -1258,14 +1258,16 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
     try {
       if (await verifyBiometric()) onUnlock()
     } catch {
-      setError('Biometric unlock was cancelled. Enter your PIN.')
+      setError('Face ID or fingerprint was not accepted. Enter your PIN, or tap to try again.')
     }
   }, [onUnlock])
 
-  // prompt once on open; onUnlock is a fresh closure each render, so guard it
+  // Ask once, as the lock appears. A repeat here costs a second face scan, so
+  // the guard has to hold across re-renders as well as across the remount a
+  // late re-lock can cause.
   const promptedRef = useRef(false)
   useEffect(() => {
-    if (!biometric || promptedRef.current) return
+    if (!biometric || promptedRef.current || document.visibilityState !== 'visible') return
     promptedRef.current = true
     void tryBiometric()
   }, [biometric, tryBiometric])
@@ -2423,6 +2425,19 @@ function App() {
   // a PIN, once set, is asked for every time the app is opened
   const [locked, setLocked] = useState(hasPin)
   const hiddenSinceRef = useRef<number | null>(null)
+  // the lock is already open: a slow reply from the server must not close it
+  // again behind the user, which would ask for the face a second time
+  const unlockedRef = useRef(false)
+
+  const handleUnlock = useCallback(() => {
+    unlockedRef.current = true
+    setLocked(false)
+  }, [])
+
+  const relock = useCallback(() => {
+    unlockedRef.current = false
+    setLocked(true)
+  }, [])
 
   // Opening WorthDelta from K-Super Hub often reuses the same tab, so the app is
   // resumed rather than loaded and the initial lock never runs again. Re-lock
@@ -2436,10 +2451,10 @@ function App() {
       }
       const hiddenSince = hiddenSinceRef.current
       hiddenSinceRef.current = null
-      if (hasPin() && hiddenSince && Date.now() - hiddenSince > RELOCK_AFTER) setLocked(true)
+      if (hasPin() && hiddenSince && Date.now() - hiddenSince > RELOCK_AFTER) relock()
     }
     const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted && hasPin()) setLocked(true)
+      if (event.persisted && hasPin()) relock()
     }
     document.addEventListener('visibilitychange', handleVisibility)
     window.addEventListener('pageshow', handlePageShow)
@@ -2447,13 +2462,13 @@ function App() {
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('pageshow', handlePageShow)
     }
-  }, [])
+  }, [relock])
 
   useEffect(() => {
     void supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
       setLoading(false)
-      if (data.session) void syncPinFromServer().then((locksOnServer) => { if (locksOnServer) setLocked(true) })
+      if (data.session) void syncPinFromServer().then((locksOnServer) => { if (locksOnServer && !unlockedRef.current) setLocked(true) })
     })
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => { setSession(nextSession); setLoading(false) })
     return () => data.subscription.unsubscribe()
@@ -2461,7 +2476,7 @@ function App() {
 
   if (loading) return <main className="boot-screen"><span className="brand-mark" aria-hidden="true">Δ</span><SpinnerGap className="spin" aria-label="Loading WorthDelta" /></main>
   if (!session) return <HubRedirect />
-  if (locked) return <LockScreen onUnlock={() => setLocked(false)} />
+  if (locked) return <LockScreen onUnlock={handleUnlock} />
   return <Dashboard session={session} />
 }
 

@@ -131,7 +131,22 @@ export function clearBiometric() {
   window.localStorage.removeItem(BIOMETRIC_KEY)
 }
 
-export async function verifyBiometric() {
+/**
+ * One face check at a time.
+ *
+ * A second navigator.credentials.get() while one is open makes iOS abort the
+ * first and re-present its sheet, so the phone scans, asks whether to use the
+ * passkey, and scans again. A caller arriving mid-check waits on the check that
+ * is already running instead of starting its own.
+ */
+let openCheck: Promise<boolean> | null = null
+
+export function verifyBiometric() {
+  openCheck ??= runBiometric().finally(() => { openCheck = null })
+  return openCheck
+}
+
+async function runBiometric() {
   const stored = window.localStorage.getItem(BIOMETRIC_KEY)
   if (!stored) return false
   const assertion = await navigator.credentials.get({
