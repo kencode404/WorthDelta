@@ -1257,7 +1257,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const APP_VERSION = '1.13'
+const APP_VERSION = '1.14'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
@@ -1369,25 +1369,29 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
             looks for an annotated field the moment it is armed, and a re-render
             arriving after that is too late to be seen.
           */}
-          <input
-            ref={pinRef}
-            className="lock-input pin-input"
-            value={pin}
-            onChange={(event) => {
-              setPinValue(event.target.value.replace(/\D/g, '').slice(0, 4))
-              setError('')
-            }}
-            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void handleSubmit() } }}
-            type="text"
-            inputMode="numeric"
-            autoComplete={biometric ? 'webauthn' : 'off'}
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            name="worthdelta-lock-code"
-            aria-label="PIN"
-            autoFocus
-          />
+          <div className="pin-field">
+            <input
+              ref={pinRef}
+              className="lock-input"
+              value={pin}
+              onChange={(event) => {
+                setPinValue(event.target.value.replace(/\D/g, '').slice(0, 4))
+                setError('')
+              }}
+              onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void handleSubmit() } }}
+              type="text"
+              inputMode="numeric"
+              autoComplete={biometric ? 'webauthn' : 'off'}
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              name="worthdelta-lock-code"
+              aria-label="PIN"
+              autoFocus
+            />
+            {/* the masking, drawn rather than asked of Safari — see .pin-field */}
+            <span className="pin-mask" aria-hidden="true">{'●'.repeat(pin.length)}</span>
+          </div>
           <button className="primary-action-button" type="button" disabled={pin.length !== 4 || checking} onClick={() => void handleSubmit()}>Unlock</button>
         </>
 

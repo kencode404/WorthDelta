@@ -657,7 +657,19 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .lock-card .brand-mark { width: 54px; height: 54px; border-radius: 17px; }
 .lock-card h1 { margin: 4px 0 0; color: var(--navy); font: 800 23px/1.15 'Baloo 2', sans-serif; }
 .lock-card > p { margin: 0; color: var(--muted); font-size: 12px; }
-.lock-input { width: 160px; height: 56px; margin-top: 4px; border-radius: 16px; font-size: 28px; font-weight: 800; letter-spacing: .5em; text-align: center; text-indent: .5em; }
+.lock-input { width: 160px; height: 56px; border-radius: 16px; font-size: 28px; font-weight: 800; letter-spacing: .5em; text-align: center; text-indent: .5em; }
+
+/* The lock screen draws its own dots over an ordinary text field, rather than
+   masking with -webkit-text-security as the settings boxes do.
+
+   Safari reads a masked field as a password box. It offers to remember what is
+   typed there, and once remembered it offers to fill it back in — a saved
+   password sitting in the AutoFill bar competing with the passkey, and winning.
+   Nothing about a plain text field invites that, which leaves the passkey as the
+   only thing there is to suggest. */
+.pin-field { position: relative; display: inline-block; margin-top: 4px; }
+.pin-field .lock-input { color: transparent; caret-color: var(--navy); }
+.pin-mask { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 800; letter-spacing: .5em; text-indent: .5em; color: var(--navy); pointer-events: none; }
 .lock-card .primary-action-button { width: 100%; }
 .lock-biometric { padding: 6px 4px; border: 0; color: var(--brand-dark); background: none; font: inherit; font-size: 12px; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .security-panel { display: grid; gap: 16px; margin-top: 18px; padding: 20px 22px; }
