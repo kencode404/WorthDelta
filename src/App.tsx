@@ -42,6 +42,8 @@ import {
   syncPinFromServer,
   setPin,
   verifyBiometric,
+  autofillAvailable,
+  offerBiometric,
   verifyPin,
 } from './lib/appLock'
 import { clearEvents, describeEvents, logEvent } from './lib/diagnostics'
@@ -1255,7 +1257,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const APP_VERSION = '1.10'
+const APP_VERSION = '1.12'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
@@ -1264,7 +1266,13 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const biometric = hasBiometric()
 
   const [askingFace, setAskingFace] = useState(false)
-  const [showPin, setShowPin] = useState(!biometric)
+  // The PIN box is the screen. The passkey rides along in the keyboard's
+  // AutoFill bar rather than taking a button of its own.
+  //
+  // null until the browser has been asked whether it can do that, so the button
+  // that stands in where it cannot does not flash up in the moment before the
+  // answer arrives.
+  const [offered, setOffered] = useState<boolean | null>(null)
   const pinRef = useRef<HTMLInputElement>(null)
 
   const tryBiometric = useCallback(async (source: string) => {
@@ -1278,22 +1286,33 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
     } finally {
       setAskingFace(false)
     }
-    // it did not open; the button is still there to try again, and the PIN is a
-    // tap away under it
+    // it did not open; the PIN box is right there, and the suggestion comes back
+    // with the next keyboard
   }, [onUnlock])
 
   useEffect(() => { logEvent('lock screen shown', biometric ? 'with a saved credential' : 'PIN only') }, [biometric])
 
-  // Asked for on sight of the lock, so opening the app is the only thing to do.
-  // Once, and only while the app is on screen: a request made to a phone that is
-  // not looking at it is a sheet waiting to be found later.
-  const askedRef = useRef(false)
+  // Put the passkey in the AutoFill bar and leave it there. Nothing is shown,
+  // nothing is read, and no sheet opens until the suggestion is tapped — which
+  // is the one face reading this lock costs.
   useEffect(() => {
-    if (!biometric || askedRef.current) return
-    if (document.visibilityState !== 'visible') return logEvent('opening prompt held back', 'app is not on screen')
-    askedRef.current = true
-    void tryBiometric('opened')
-  }, [biometric, tryBiometric])
+    if (!biometric) return
+    const controller = new AbortController()
+    void (async () => {
+      if (!(await autofillAvailable())) {
+        setOffered(false)
+        return logEvent('autofill unavailable', 'no conditional mediation here')
+      }
+      if (controller.signal.aborted) return
+      setOffered(true)
+      try {
+        if (await offerBiometric(controller.signal)) onUnlock()
+      } catch {
+        // withdrawn, or the suggestion was taken and refused; the PIN still works
+      }
+    })()
+    return () => controller.abort()
+  }, [biometric, onUnlock])
 
   // Nowhere to read a console on a phone, so the trail comes out here: three
   // taps on the mark.
@@ -1324,18 +1343,22 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
       <form className="lock-card" onSubmit={(event) => void handleSubmit(event)}>
         <span className="brand-mark app-icon-mark" aria-hidden="true" onClick={revealLog}><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
         <h1>WorthDelta is locked</h1>
-        <p>{showPin ? 'Enter your 4-digit PIN to continue.' : askingFace ? 'Checking your face…' : 'Unlock with Face ID to continue.'}</p>
+        <p>{askingFace ? 'Checking your face…' : offered === true ? 'Enter your PIN, or pick Face ID above the keyboard.' : 'Enter your 4-digit PIN to continue.'}</p>
 
-        {/* One way in at a time: the face by default, the PIN for anyone who asks for it */}
-        {!showPin && <button className="primary-action-button lock-face-button" type="button" disabled={askingFace} onClick={() => void tryBiometric('tapped')}>
-          <Fingerprint weight="duotone" aria-hidden="true" />{askingFace ? 'Checking…' : 'Unlock with Face ID'}
-        </button>}
-
-        {showPin && <>
+        <>
           {/*
-            Not type="password". iOS offers a saved passkey whenever a password
-            field takes focus on a domain that has one, which is a sign-in prompt
-            nobody asked for. A text field masked in CSS asks iOS for nothing.
+            Still not type="password" — a password field makes iOS offer saved
+            passwords, which this lock has none of. autocomplete="webauthn" asks
+            for the one suggestion that is wanted: the passkey, offered beside
+            the keyboard by the conditional request armed above, where taking it
+            costs a single reading of the face. There is no Face ID button any
+            more because a button meant a modal request, and a modal request on a
+            screen that has only just appeared is read twice.
+
+            The attribute comes off `biometric`, which is known synchronously,
+            rather than off whether the offer went out. The conditional request
+            looks for an annotated field the moment it is armed, and a re-render
+            arriving after that is too late to be seen.
           */}
           <input
             ref={pinRef}
@@ -1347,7 +1370,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
             }}
             type="text"
             inputMode="numeric"
-            autoComplete="off"
+            autoComplete={biometric ? 'webauthn' : 'off'}
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
@@ -1356,12 +1379,19 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
             autoFocus
           />
           <button className="primary-action-button" type="submit" disabled={pin.length !== 4 || checking}>Unlock</button>
-        </>}
+        </>
 
         {error && <p className="form-alert error" role="alert">{error}</p>}
 
-        {biometric && <button className="lock-alternative" type="button" onClick={() => { setError(''); setShowPin(!showPin) }}>
-          {showPin ? 'Use Face ID' : 'Use PIN instead'}
+        {/*
+          The way in for anywhere the AutoFill bar is not: a browser without
+          conditional mediation, or a credential enrolled before they were made
+          discoverable. It opens the sheet the old way, second reading and all,
+          which beats no way in at all. Where the suggestion does appear this is
+          not rendered, and the screen is the PIN box alone.
+        */}
+        {biometric && offered === false && <button className="lock-alternative" type="button" disabled={askingFace} onClick={() => { setError(''); void tryBiometric('tapped') }}>
+          <Fingerprint weight="duotone" aria-hidden="true" />{askingFace ? 'Checking…' : 'Use Face ID'}
         </button>}
         <p className="lock-build">v{APP_VERSION}</p>
         {log && <div className="lock-log">

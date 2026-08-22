@@ -101,10 +101,15 @@ export async function biometricAvailable() {
  * Registers this device's own authenticator: Face ID, Touch ID or Android
  * biometrics.
  *
- * residentKey is 'discouraged' because a lock on one phone has no use for a
- * credential that travels. iOS pays no attention: it saves a passkey to iCloud
- * either way, shows its own sheet when that passkey is used, and there is no
- * asking it not to. The hint stays for the platforms that do honour it.
+ * residentKey is 'required'. A lock on one phone has no use for a credential
+ * that travels, and this once asked for 'discouraged' on those grounds. It has
+ * to travel anyway: only a discoverable credential can be offered in the
+ * keyboard's AutoFill bar, and that offer is what lets the face be read once
+ * instead of twice. iOS was saving it to iCloud regardless of what we asked.
+ *
+ * A credential enrolled before this may not be discoverable, in which case the
+ * AutoFill bar stays empty and the lock falls back to its own button. Turning
+ * Face ID off and on again in Settings mints a discoverable one.
  */
 export async function registerBiometric(userId: string, label: string) {
   const credential = await navigator.credentials.create({
@@ -116,8 +121,8 @@ export async function registerBiometric(userId: string, label: string) {
       authenticatorSelection: {
         authenticatorAttachment: 'platform',
         userVerification: 'required',
-        residentKey: 'discouraged',
-        requireResidentKey: false,
+        residentKey: 'required',
+        requireResidentKey: true,
       },
       attestation: 'none',
       timeout: 60000,
@@ -159,23 +164,68 @@ export function clearBiometric() {
  */
 let openCheck: Promise<boolean> | null = null
 
+/** The standing AutoFill offer, kept so a modal check can take the floor from it. */
+let offer: AbortController | null = null
+
 export function verifyBiometric(source: string) {
   if (openCheck) {
     logEvent('face check joined one already running', source)
     return openCheck
   }
+  // Only one request may be outstanding. A standing AutoFill offer counts, and
+  // leaving it up makes the browser reject this one.
+  if (offer) {
+    logEvent('autofill offer withdrawn', `making way for ${source}`)
+    offer.abort()
+    offer = null
+  }
   openCheck = runBiometric(source).finally(() => { openCheck = null })
   return openCheck
 }
 
-async function runBiometric(source: string) {
+/** Whether the browser can put a passkey in the keyboard's AutoFill bar. */
+export async function autofillAvailable() {
+  if (!window.PublicKeyCredential?.isConditionalMediationAvailable) return false
+  try {
+    return await window.PublicKeyCredential.isConditionalMediationAvailable()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Offers the passkey in the keyboard's AutoFill bar, and settles only if it is
+ * chosen.
+ *
+ * This is the whole point of the current arrangement. A modal request opens the
+ * passkey sheet whether or not anyone wanted it, and on an app that has only
+ * just appeared iOS reads the face for the request and again for the sheet. A
+ * conditional request shows nothing on its own: it waits beside the PIN box, and
+ * the single face reading happens when the suggestion is tapped.
+ *
+ * Rejects with AbortError when withdrawn, which is the normal way it ends.
+ */
+export function offerBiometric(signal: AbortSignal) {
+  offer?.abort()
+  const controller = new AbortController()
+  offer = controller
+  signal.addEventListener('abort', () => controller.abort(), { once: true })
+  return runBiometric('autofill', controller.signal).finally(() => {
+    if (offer === controller) offer = null
+  })
+}
+
+async function runBiometric(source: string, signal?: AbortSignal) {
   const stored = storedCredential()
   if (!stored) {
     logEvent('face check skipped', 'no credential on this device')
     return false
   }
-  logEvent('credentials.get called', `${source} · ${navigator.userActivation?.isActive ? 'from a tap' : 'no user gesture'}`)
+  const conditional = signal != null
+  logEvent('credentials.get called', `${source} · ${conditional ? 'conditional' : 'modal'} · ${navigator.userActivation?.isActive ? 'from a tap' : 'no user gesture'}`)
   const assertion = await navigator.credentials.get({
+    mediation: conditional ? 'conditional' : undefined,
+    signal,
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
       // No allowCredentials on purpose.
@@ -195,11 +245,16 @@ async function runBiometric(source: string) {
       // authenticator says whether it verified anyone, and an answer that says
       // it did not is refused below.
       userVerification: 'preferred',
-      timeout: 60000,
+      // An AutoFill offer stands until it is taken or withdrawn. A timeout would
+      // quietly retire it while the PIN box is still on screen, leaving a
+      // suggestion that no longer does anything.
+      timeout: conditional ? undefined : 60000,
     },
   }).catch((error: unknown) => {
     const failure = error as { name?: string; message?: string }
-    logEvent('credentials.get failed', `${failure?.name ?? 'Error'}: ${failure?.message ?? ''}`)
+    // Withdrawing the offer is how it normally ends, not a fault.
+    if (failure?.name === 'AbortError') logEvent('autofill offer ended', 'withdrawn')
+    else logEvent('credentials.get failed', `${failure?.name ?? 'Error'}: ${failure?.message ?? ''}`)
     throw error
   })
   if (!assertion) {

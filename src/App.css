@@ -715,25 +715,13 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   word-break: break-word;
 }
 
-/* A PIN box that iOS does not read as a sign-in field: masked here rather than
-   by type="password", which is what makes it offer a saved passkey on focus. */
+/* Masked here rather than by type="password". Hiding the digits is all that was
+   ever wanted from a password field; being treated as one has iOS offering saved
+   passwords, which this lock has none of. The one suggestion it should make is
+   asked for by autocomplete="webauthn" on the field instead. */
 .pin-input {
   -webkit-text-security: disc;
   text-security: disc;
-}
-
-/* Face ID leads on the lock screen; the PIN is the way round it */
-.lock-face-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  width: 100%;
-}
-
-.lock-face-button svg {
-  width: 1.25rem;
-  height: 1.25rem;
 }
 
 /* small enough to ignore, large enough to read back over a chat */
@@ -744,8 +732,12 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   opacity: 0.45;
 }
 
-/* the quieter way in, under whichever one is on offer */
+/* the way in where the AutoFill bar cannot offer the passkey; hidden when it can */
 .lock-alternative {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
   margin-top: 0.25rem;
   padding: 0.5rem;
   border: 0;
@@ -754,4 +746,9 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   font-size: 0.85rem;
   color: var(--accent, #2563eb);
   text-decoration: underline;
+}
+
+.lock-alternative svg {
+  width: 1.1rem;
+  height: 1.1rem;
 }
