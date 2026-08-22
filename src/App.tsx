@@ -1257,7 +1257,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const APP_VERSION = '1.12'
+const APP_VERSION = '1.13'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
@@ -1326,8 +1326,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
     }
   }
 
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault()
+  async function handleSubmit() {
     if (pin.length !== 4 || checking) return
     setChecking(true)
     if (await verifyPin(pin)) onUnlock()
@@ -1338,9 +1337,19 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
     setChecking(false)
   }
 
+  /*
+    A div, not a form.
+
+    Submitting a form of masked digits is what Safari reads as signing in, and it
+    answers by offering to remember the PIN. Saying yes puts the PIN in iCloud
+    Keychain and hands the unlock to password autofill: it fills the box, reads
+    the face to do it, and looks exactly like the passkey working while the
+    passkey sits unused. Nothing here submits, so there is nothing for Safari to
+    offer to remember. Enter is handled on the field instead.
+  */
   return (
     <main className="lock-screen">
-      <form className="lock-card" onSubmit={(event) => void handleSubmit(event)}>
+      <div className="lock-card">
         <span className="brand-mark app-icon-mark" aria-hidden="true" onClick={revealLog}><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span>
         <h1>WorthDelta is locked</h1>
         <p>{askingFace ? 'Checking your face…' : offered === true ? 'Enter your PIN, or pick Face ID above the keyboard.' : 'Enter your 4-digit PIN to continue.'}</p>
@@ -1368,6 +1377,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
               setPinValue(event.target.value.replace(/\D/g, '').slice(0, 4))
               setError('')
             }}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void handleSubmit() } }}
             type="text"
             inputMode="numeric"
             autoComplete={biometric ? 'webauthn' : 'off'}
@@ -1378,7 +1388,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
             aria-label="PIN"
             autoFocus
           />
-          <button className="primary-action-button" type="submit" disabled={pin.length !== 4 || checking}>Unlock</button>
+          <button className="primary-action-button" type="button" disabled={pin.length !== 4 || checking} onClick={() => void handleSubmit()}>Unlock</button>
         </>
 
         {error && <p className="form-alert error" role="alert">{error}</p>}
@@ -1402,7 +1412,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
           </div>
           <pre>{log}</pre>
         </div>}
-      </form>
+      </div>
     </main>
   )
 }
