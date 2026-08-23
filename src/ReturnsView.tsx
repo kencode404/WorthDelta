@@ -140,7 +140,7 @@ export function ReturnsView({ userId, categories, records, entries, loading }: R
   const toggleSelection = (id: string, setSelection: React.Dispatch<React.SetStateAction<string[]>>) => setSelection((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
 
   return <div className="returns-page">
-    <details className="panel returns-selector" open>
+    <details className="panel returns-selector">
       <summary><span><CaretDown weight="bold" aria-hidden="true" /><strong>Included Investments</strong></span><small>{selectedInvestments.length} investment · {selectedAssets.length} asset · {selectedDividends.length} dividend</small></summary>
       <div className="returns-selector-body">
         <div className="returns-section-heading"><div><p className="eyebrow">Portfolio scope</p><h2>Build your XIRR scope</h2><p>Choose investment cash flows, the Initial Asset opening and latest values, and optional dividend income. All choices stay on this device.</p></div>{(selectedInvestments.length > 0 || selectedAssets.length > 0 || selectedDividends.length > 0) && <button className="returns-clear" type="button" onClick={() => { setSelectedInvestmentIds([]); setSelectedAssetIds([]); setSelectedDividendIds([]) }}>Clear selection</button>}</div>
