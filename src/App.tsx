@@ -1257,7 +1257,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const APP_VERSION = '1.14'
+const APP_VERSION = '1.15'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
@@ -2321,9 +2321,18 @@ function Dashboard({ session }: { session: Session }) {
 
   const filteredCategories = categories.filter((category) => category.category_type === type && !category.archived_at)
   const typeGroupList = groupsForType(type)
-  const ungroupedTypeCategories = typeGroupList.length > 0
-    ? filteredCategories.filter((category) => !typeGroupList.some((group) => group.id === category.expense_group_id))
-    : []
+  // Everything that is not inside one of this type's groups, which for a type
+  // with no groups at all is everything it has.
+  //
+  // This used to be emptied when there were no groups, on the reading that
+  // nothing can be unassigned where there is nothing to be assigned to. The
+  // picker below is built from the groups plus this list, so for Income and
+  // Investments — which have no groups — it was built from nothing and opened
+  // with nothing to choose, while the button that opens it stayed enabled
+  // because the categories themselves were there all along.
+  const ungroupedTypeCategories = filteredCategories.filter(
+    (category) => !typeGroupList.some((group) => group.id === category.expense_group_id),
+  )
   const selectedCategory = filteredCategories.find((category) => category.name === categoryName) ?? null
   // the same colours in the same order as the records tab, so a main group is
   // recognised by its colour wherever it turns up
