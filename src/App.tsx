@@ -1487,9 +1487,9 @@ function Dashboard({ session }: { session: Session }) {
       setSelectedCategoryEntries(null)
       window.scrollTo({ top: 0, behavior: 'auto' })
     }
-    if (!['#overview', '#records', '#returns', '#settings'].includes(window.location.hash)) {
-      window.history.replaceState(null, '', '#records')
-    }
+    // A browser or installed phone app can restore its last URL on launch.
+    // Start a fresh session on Records rather than reopening a stale tab.
+    window.history.replaceState(null, '', '#records')
     handleHashChange()
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
