@@ -1711,14 +1711,6 @@ function Dashboard({ session }: { session: Session }) {
     }
   }, [loadData])
 
-  const assetTrend = useMemo(() => {
-    const totals = new Map<string, number>()
-    records.filter((record) => record.financial_categories?.category_type === 'asset').forEach((record) => {
-      totals.set(record.period, (totals.get(record.period) ?? 0) + Number(record.amount))
-    })
-    return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([pointPeriod, value]) => ({ period: pointPeriod, value }))
-  }, [records])
-
   const monthlySeries = useMemo<MonthlyPoint[]>(() => {
     const totals = new Map<string, { income: number; expenses: number; investments: number; assets: number; hasAssets: boolean }>()
     records.forEach((record) => {
@@ -1798,7 +1790,9 @@ function Dashboard({ session }: { session: Session }) {
     })
   }, [records])
 
-  const activePeriod = assetTrend.at(-1)?.period ?? records[0]?.period ?? `${entryDate.slice(0, 7)}-01`
+  // Overview is a snapshot of this calendar month. Future planned records
+  // stay available in Records, but must not pull the overview into the future.
+  const activePeriod = getCurrentMonthPeriod()
   const monthRecords = records.filter((record) => record.period === activePeriod)
   const totalFor = (recordType: CategoryType) => monthRecords
     .filter((record) => record.financial_categories?.category_type === recordType)
