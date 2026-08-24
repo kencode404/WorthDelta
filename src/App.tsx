@@ -699,6 +699,7 @@ interface ChartPoint {
 }
 
 const RANGE_PRESETS = [
+  { label: '6M', months: 6 },
   { label: '1Y', months: 12 },
   { label: '3Y', months: 36 },
   { label: '5Y', months: 60 },
@@ -881,7 +882,10 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
   const tooltipHeight = row * (active?.worth === null ? 4 : 5) + 16
   const tooltipX = Math.max(padding.left, Math.min(activeX + 16, width - padding.right - tooltipWidth))
 
-  const labelEvery = Math.max(1, Math.ceil(chartPoints.length / (compact ? 3 : 8)))
+  // Use the actual point spacing rather than a fixed label count. Zooming in
+  // grows `step`, so months naturally graduate from every third to every
+  // second and finally every month when there is enough room to read them.
+  const labelEvery = Math.max(1, Math.ceil((compact ? 54 : 72) / Math.max(step, 1)))
   const rangeLabel = `${chartPoints[0]?.label ?? ''} – ${chartPoints.at(-1)?.label ?? ''}`
 
   /**
@@ -1051,7 +1055,7 @@ function AnnualChart({ points }: { points: MonthlyPoint[] }) {
           {worthSegments.filter((segment) => segment.length > 1).map((segment, index) => <path key={`worth-${index}`} className="worth-path" d={smoothPath(segment)} />)}
           {flowSeries.map((series) => <path key={series.key} className="flow-path" d={flowPath(series.key)} stroke={series.color} />)}
           {chartPoints.map((point, index) => point.worth === null ? null : <circle key={`worth-dot-${point.key}`} className="worth-dot" cx={xFor(index)} cy={yWorth(point.worth)} r={chartPoints.length > 24 ? 3 : 5} />)}
-          {chartPoints.map((point, index) => index % labelEvery === 0
+          {chartPoints.map((point, index) => index % labelEvery === 0 || index === chartPoints.length - 1
             ? <text key={`label-${point.key}`} x={xFor(index)} y={height - 18} textAnchor="middle" className="annual-year-label">{point.label}</text>
             : null)}
           {active && <>
@@ -1766,28 +1770,31 @@ function Dashboard({ session }: { session: Session }) {
     })
 
     const currentPeriod = getCurrentMonthPeriod()
-    return [...yearMap.entries()].sort(([a], [b]) => a - b).map(([year, summary]) => {
-      const recordedAssets = [...summary.assets.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .filter(([period]) => period <= currentPeriod)
-      const yearlyAssetTrend = recordedAssets
-        .map(([period, value]) => ({ period, value: value - (summary.monthlyExpenses.get(period) ?? 0) }))
-      const netWorth = yearlyAssetTrend.at(-1)?.value ?? 0
-      const openingWorth = recordedAssets[0]?.[1] ?? 0
-      const result: AnnualSummary = {
-        year,
-        income: summary.income,
-        expenses: summary.expenses,
-        investments: summary.investments,
-        netWorth,
-        netWorthChange: netWorth - openingWorth,
-        netWorthChangePercent: openingWorth ? ((netWorth - openingWorth) / Math.abs(openingWorth)) * 100 : null,
-        monthsTracked: yearlyAssetTrend.length,
-        savingsRate: summary.income ? ((summary.income - summary.expenses) / summary.income) * 100 : 0,
-        assetTrend: yearlyAssetTrend,
-      }
-      return result
-    })
+    return [...yearMap.entries()]
+      .filter(([year]) => year <= Number(currentPeriod.slice(0, 4)))
+      .sort(([a], [b]) => a - b)
+      .map(([year, summary]) => {
+        const recordedAssets = [...summary.assets.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .filter(([period]) => period <= currentPeriod)
+        const yearlyAssetTrend = recordedAssets
+          .map(([period, value]) => ({ period, value: value - (summary.monthlyExpenses.get(period) ?? 0) }))
+        const netWorth = yearlyAssetTrend.at(-1)?.value ?? 0
+        const openingWorth = recordedAssets[0]?.[1] ?? 0
+        const result: AnnualSummary = {
+          year,
+          income: summary.income,
+          expenses: summary.expenses,
+          investments: summary.investments,
+          netWorth,
+          netWorthChange: netWorth - openingWorth,
+          netWorthChangePercent: openingWorth ? ((netWorth - openingWorth) / Math.abs(openingWorth)) * 100 : null,
+          monthsTracked: yearlyAssetTrend.length,
+          savingsRate: summary.income ? ((summary.income - summary.expenses) / summary.income) * 100 : 0,
+          assetTrend: yearlyAssetTrend,
+        }
+        return result
+      })
   }, [records])
 
   // Overview is a snapshot of this calendar month. Future planned records
