@@ -20,6 +20,7 @@ import {
   SpinnerGap,
   TrendDown,
   TrendUp,
+  WarningCircle,
   Wallet,
   WifiSlash,
   X,
@@ -403,6 +404,7 @@ function RecordSectionCard({
   total,
   categories,
   expenseGroups,
+  overspent,
   onOpenCategory,
 }: {
   type: CategoryType
@@ -410,6 +412,7 @@ function RecordSectionCard({
   total: number
   categories: CategoryBreakdown[]
   expenseGroups: ExpenseGroup[]
+  overspent: boolean
   onOpenCategory: (type: CategoryType, category: CategoryBreakdown) => void
 }) {
   const meta = categoryMeta[type]
@@ -450,10 +453,10 @@ function RecordSectionCard({
   })
 
   return (
-    <article className={`record-section-card ${type}`}>
+    <article id={`record-section-${type}`} className={`record-section-card ${type}`}>
       <header className="record-section-heading">
         <span className={`record-section-icon ${type}`}><Icon weight="duotone" aria-hidden="true" /></span>
-        <div><p>{meta.label}</p><strong>{formatCurrency(total)}</strong><small>{formatMonth(period)}</small></div>
+        <div><p>{meta.label}</p><strong className={overspent ? 'overspend-amount' : ''}>{formatCurrency(total)}{overspent && <OverspendWarning />}</strong><small>{formatMonth(period)}</small></div>
       </header>
       <div className="record-section-body">
         <div className="record-donut-column">
@@ -469,6 +472,13 @@ function RecordSectionCard({
       </div>
     </article>
   )
+}
+
+function OverspendWarning() {
+  return <span className="overspend-warning" tabIndex={0} aria-label="Overspend: monthly expenses exceed monthly income">
+    <WarningCircle weight="fill" aria-hidden="true" />
+    <span className="overspend-tooltip" role="tooltip">Overspend</span>
+  </span>
 }
 
 function EditableLedgerEntryRow({
@@ -1453,6 +1463,7 @@ function Dashboard({ session }: { session: Session }) {
   const [rateStamp, setRateStamp] = useState<string | null>(null)
   const [rateLive, setRateLive] = useState(false)
   const [rateLoading, setRateLoading] = useState(false)
+  const [scrollTargetSection, setScrollTargetSection] = useState<CategoryType | null>(null)
   const [selectedCategoryEntries, setSelectedCategoryEntries] = useState<{ type: CategoryType; category: CategoryBreakdown; period: string } | null>(null)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -1505,6 +1516,15 @@ function Dashboard({ session }: { session: Session }) {
     if (entryDialogOpen && !dialog.open) dialog.showModal()
     if (!entryDialogOpen && dialog.open) dialog.close()
   }, [entryDialogOpen])
+
+  useEffect(() => {
+    if (!scrollTargetSection || entryDialogOpen || view !== 'records') return
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`record-section-${scrollTargetSection}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setScrollTargetSection(null)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [entryDialogOpen, scrollTargetSection, view])
 
   useEffect(() => {
     const query = window.matchMedia('(max-width: 560px)')
@@ -1876,7 +1896,9 @@ function Dashboard({ session }: { session: Session }) {
     })
   }, [categories, expenseGroups, records, summaryPeriod])
   const liquidAssetTotal = recordSections.find((section) => section.type === 'asset')?.total ?? 0
+  const monthIncomeTotal = recordSections.find((section) => section.type === 'income')?.total ?? 0
   const monthExpenseTotal = recordSections.find((section) => section.type === 'expense')?.total ?? 0
+  const recordsOverspent = monthExpenseTotal > monthIncomeTotal
   const currentMonthPeriod = getCurrentMonthPeriod()
   const liquidAssetState = summaryPeriod < currentMonthPeriod
     ? 'closed' as const
@@ -2000,6 +2022,8 @@ function Dashboard({ session }: { session: Session }) {
       if (!queued) return
       showSnapshot(queued.snapshot)
       setPendingCount(queued.pendingCount)
+      setRecordPeriod(`${entryDate.slice(0, 7)}-01`)
+      setScrollTargetSection(type)
       setAmount('')
       setDescription('')
       setRepeatMonths(1)
@@ -2398,7 +2422,7 @@ function Dashboard({ session }: { session: Session }) {
         <section className="metric-grid" aria-label="Latest monthly summary">
           <article><span><span className="label-long">Estimated current worth</span><span className="label-short">Est. current worth</span>{activePeriod === currentMonthPeriod && <i className="live-dot" aria-hidden="true" />}</span><strong>{formatCurrency(assets - expenses)}{overviewChange !== null && <span className={`change-pill ${overviewChange < 0 ? 'negative' : ''} ${activePeriod === currentMonthPeriod ? 'live' : ''}`}>{changeLabel(overviewChange)}</span>}</strong><small>{formatMonth(activePeriod)}</small></article>
           <article><span>Monthly income</span><strong>{formatCurrency(income)}</strong><small>{formatMonth(activePeriod)}</small></article>
-          <article><span>Monthly expenses</span><strong>{formatCurrency(expenses)}</strong><small>{income ? `${Math.round((expenses / income) * 100)}% of income` : formatMonth(activePeriod)}</small></article>
+          <article><span>Monthly expenses</span><strong className={expenses > income ? 'overspend-amount' : ''}>{formatCurrency(expenses)}{expenses > income && <OverspendWarning />}</strong><small>{income ? `${Math.round((expenses / income) * 100)}% of income` : formatMonth(activePeriod)}</small></article>
           <article><span>Invested</span><strong>{formatCurrency(investments)}</strong><small>{formatMonth(activePeriod)}</small></article>
         </section>
 
@@ -2426,7 +2450,7 @@ function Dashboard({ session }: { session: Session }) {
         </section>
 
         {loading ? <div className="loading-state"><SpinnerGap className="spin" aria-hidden="true" />Loading category sections…</div> : <section className="record-section-grid" aria-label={`Category summaries for ${formatMonth(summaryPeriod)}`}>
-          {recordSections.map((section) => <RecordSectionCard key={section.type} type={section.type} period={summaryPeriod} total={section.total} categories={section.categories} expenseGroups={groupsForType(section.type)} onOpenCategory={(sectionType, category) => setSelectedCategoryEntries({ type: sectionType, category, period: summaryPeriod })} />)}
+          {recordSections.map((section) => <RecordSectionCard key={section.type} type={section.type} period={summaryPeriod} total={section.total} categories={section.categories} expenseGroups={groupsForType(section.type)} overspent={section.type === 'expense' && recordsOverspent} onOpenCategory={(sectionType, category) => setSelectedCategoryEntries({ type: sectionType, category, period: summaryPeriod })} />)}
         </section>}
         </> : view === 'returns' ? <ReturnsView userId={session.user.id} categories={categories} records={records} entries={entries} loading={loading} /> : <>
         <section className="category-settings-grid" aria-label="Financial category settings">
