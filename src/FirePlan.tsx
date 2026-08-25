@@ -248,8 +248,8 @@ export function FirePlan({ userId, categories, records, loading }: FirePlanProps
         <section className="fire-assumptions" aria-labelledby="fire-assumptions-title">
           <div><p className="eyebrow">Assumptions</p><h3 id="fire-assumptions-title">Your sustainable return</h3></div>
           <div className="fire-assumption-fields">
-            <label><span>Passive annual return</span><span className="fire-percent-input"><input type="number" min="0" max="100" step="0.1" value={settings.nominalReturn} onChange={(event) => setSettings((current) => ({ ...current, nominalReturn: Number(event.target.value) }))} /><b>%</b></span></label>
-            <label><span>Inflation</span><span className="fire-percent-input"><input type="number" min="0" max="100" step="0.1" value={settings.inflation} onChange={(event) => setSettings((current) => ({ ...current, inflation: Number(event.target.value) }))} /><b>%</b></span></label>
+            <label><span>Passive annual return</span><span className="fire-percent-input"><input type="number" min="0" max="100" step="0.1" value={settings.nominalReturn || ''} placeholder="0" onChange={(event) => setSettings((current) => ({ ...current, nominalReturn: Number(event.target.value) }))} /><b>%</b></span></label>
+            <label><span>Inflation</span><span className="fire-percent-input"><input type="number" min="0" max="100" step="0.1" value={settings.inflation || ''} placeholder="0" onChange={(event) => setSettings((current) => ({ ...current, inflation: Number(event.target.value) }))} /><b>%</b></span></label>
             <div className="fire-real-return"><span>Real return for spending</span><strong>{(realReturn * 100).toFixed(1)}%</strong></div>
           </div>
           <p className="fire-saved-note">Your latest edits save automatically on this device.</p>
