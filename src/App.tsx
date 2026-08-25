@@ -7,6 +7,7 @@ import {
   DownloadSimple,
   ChartLineUp,
   CloudArrowUp,
+  Campfire,
   Fingerprint,
   Database,
   GearSix,
@@ -52,6 +53,7 @@ import { fetchMyrRate } from './lib/exchangeRate'
 import { captureChartImage, downloadWorkbook } from './lib/exportWorkbook'
 import { ensureFreshSession, isExpiredTokenError, supabase } from './lib/supabase'
 import { ReturnsView } from './ReturnsView'
+import { FirePlan } from './FirePlan'
 import type { CategoryType, ExpenseGroup, FinancialCategory, LedgerEntry, MonthlyRecord } from './types'
 import './App.css'
 
@@ -151,11 +153,12 @@ const getCurrentMonthPeriod = () => {
 const HUB_URL = 'https://kencode404.github.io/K-Super-Hub/'
 const isLocalPreview = ['localhost', '127.0.0.1'].includes(window.location.hostname)
 type SyncStatus = 'offline' | 'syncing' | 'pending' | 'synced'
-type DashboardView = 'overview' | 'records' | 'returns' | 'settings'
+type DashboardView = 'overview' | 'records' | 'returns' | 'fire' | 'settings'
 
 const dashboardViewFromHash = (): DashboardView => {
   if (window.location.hash === '#overview') return 'overview'
   if (window.location.hash === '#returns') return 'returns'
+  if (window.location.hash === '#fire') return 'fire'
   if (window.location.hash === '#settings') return 'settings'
   return 'records'
 }
@@ -2397,6 +2400,8 @@ function Dashboard({ session }: { session: Session }) {
       ? { title: 'Your financial records', lead: 'Every category, in view.', detail: 'Tap a category to view and edit its entries' }
       : view === 'returns'
         ? { title: 'Annualised Money-Weighted Return (XIRR)', lead: 'Your selected investments only.', detail: 'Calculated locally from actual dated cash flows' }
+        : view === 'fire'
+          ? { title: 'Your F.I.R.E Plan', lead: 'Turn today’s finances into future freedom.', detail: 'Your assumptions and lifestyle, in one view' }
         : { title: 'Category settings', lead: 'Make WorthDelta yours.', detail: 'Edit every category and organise expenses into main groups' }
 
   return (
@@ -2411,7 +2416,7 @@ function Dashboard({ session }: { session: Session }) {
       <aside ref={sidebarRef} id="dashboard-sidebar" className={`sidebar ${mobileNavOpen ? 'mobile-open' : ''}`}>
         <button className="sidebar-close-button" type="button" aria-label="Close navigation menu" onClick={() => { setMobileNavOpen(false); mobileMenuButtonRef.current?.focus() }}><X weight="bold" aria-hidden="true" /></button>
         <a className="brand brand-light" href="#overview" aria-label="WorthDelta overview" onClick={() => setMobileNavOpen(false)}><span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span><span>WorthDelta</span></a>
-        <nav aria-label="Dashboard"><a ref={firstNavItemRef} className={`nav-item ${view === 'overview' ? 'active' : ''}`} href="#overview" onClick={() => setMobileNavOpen(false)}><ChartLineUp weight="duotone" aria-hidden="true" />Overview</a><a className={`nav-item ${view === 'records' ? 'active' : ''}`} href="#records" onClick={() => setMobileNavOpen(false)}><Receipt weight="duotone" aria-hidden="true" />Records</a><a className={`nav-item ${view === 'returns' ? 'active' : ''}`} href="#returns" onClick={() => setMobileNavOpen(false)}><Percent weight="duotone" aria-hidden="true" />Returns</a><a className={`nav-item ${view === 'settings' ? 'active' : ''}`} href="#settings" onClick={() => setMobileNavOpen(false)}><GearSix weight="duotone" aria-hidden="true" />Settings</a></nav>
+        <nav aria-label="Dashboard"><a ref={firstNavItemRef} className={`nav-item ${view === 'overview' ? 'active' : ''}`} href="#overview" onClick={() => setMobileNavOpen(false)}><ChartLineUp weight="duotone" aria-hidden="true" />Overview</a><a className={`nav-item ${view === 'records' ? 'active' : ''}`} href="#records" onClick={() => setMobileNavOpen(false)}><Receipt weight="duotone" aria-hidden="true" />Records</a><a className={`nav-item ${view === 'returns' ? 'active' : ''}`} href="#returns" onClick={() => setMobileNavOpen(false)}><Percent weight="duotone" aria-hidden="true" />Returns</a><a className={`nav-item ${view === 'fire' ? 'active' : ''}`} href="#fire" onClick={() => setMobileNavOpen(false)}><Campfire weight="duotone" aria-hidden="true" />F.I.R.E Plan</a><a className={`nav-item ${view === 'settings' ? 'active' : ''}`} href="#settings" onClick={() => setMobileNavOpen(false)}><GearSix weight="duotone" aria-hidden="true" />Settings</a></nav>
         <div className="sidebar-user"><span className="avatar">{(session.user.email?.[0] ?? 'W').toUpperCase()}</span><span><strong>{session.user.user_metadata.full_name ?? 'WorthDelta user'}</strong><small>{session.user.email}</small></span><button type="button" onClick={() => void supabase.auth.signOut()} aria-label="Sign out"><SignOut aria-hidden="true" /></button></div>
       </aside>
 
@@ -2455,7 +2460,7 @@ function Dashboard({ session }: { session: Session }) {
         {loading ? <div className="loading-state"><SpinnerGap className="spin" aria-hidden="true" />Loading category sections…</div> : <section className="record-section-grid" aria-label={`Category summaries for ${formatMonth(summaryPeriod)}`}>
           {recordSections.map((section) => <RecordSectionCard key={section.type} type={section.type} period={summaryPeriod} total={section.total} categories={section.categories} expenseGroups={groupsForType(section.type)} overspent={section.type === 'expense' && recordsOverspent} onOpenCategory={(sectionType, category) => setSelectedCategoryEntries({ type: sectionType, category, period: summaryPeriod })} />)}
         </section>}
-        </> : view === 'returns' ? <ReturnsView userId={session.user.id} categories={categories} records={records} entries={entries} loading={loading} /> : <>
+        </> : view === 'returns' ? <ReturnsView userId={session.user.id} categories={categories} records={records} entries={entries} loading={loading} /> : view === 'fire' ? <FirePlan userId={session.user.id} categories={categories} records={records} loading={loading} /> : <>
         <section className="category-settings-grid" aria-label="Financial category settings">
           {(Object.keys(categoryMeta) as CategoryType[]).map((categoryType) => {
             const meta = categoryMeta[categoryType]
