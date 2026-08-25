@@ -20,7 +20,6 @@ import {
   SpinnerGap,
   TrendDown,
   TrendUp,
-  WarningCircle,
   Wallet,
   WifiSlash,
   X,
@@ -476,7 +475,11 @@ function RecordSectionCard({
 
 function OverspendWarning() {
   return <span className="overspend-warning" tabIndex={0} aria-label="Overspend: monthly expenses exceed monthly income">
-    <WarningCircle weight="fill" aria-hidden="true" />
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 2.8 22 20.5H2L12 2.8Z" fill="#f5c644" stroke="#1f2937" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M12 8v6.3" fill="none" stroke="#1f2937" strokeWidth="2.2" strokeLinecap="round" />
+      <circle cx="12" cy="17.4" r="1.25" fill="#1f2937" />
+    </svg>
     <span className="overspend-tooltip" role="tooltip">Overspend</span>
   </span>
 }
