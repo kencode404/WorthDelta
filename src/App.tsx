@@ -476,7 +476,7 @@ function RecordSectionCard({
 function OverspendWarning() {
   return <span className="overspend-warning" tabIndex={0} aria-label="Overspend: monthly expenses exceed monthly income">
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M12 2.8 22 20.5H2L12 2.8Z" fill="#f5c644" stroke="#1f2937" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M12 2.8c.5 0 .9.26 1.14.7L22 19.46c.44.8-.13 1.74-1.04 1.74H3.04C2.13 21.2 1.56 20.26 2 19.46L10.86 3.5c.24-.44.64-.7 1.14-.7Z" fill="#f5c644" stroke="#1f2937" strokeWidth="1.7" strokeLinejoin="round" />
       <path d="M12 8v6.3" fill="none" stroke="#1f2937" strokeWidth="2.2" strokeLinecap="round" />
       <circle cx="12" cy="17.4" r="1.25" fill="#1f2937" />
     </svg>
@@ -1277,7 +1277,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const APP_VERSION = '1.15'
+const APP_VERSION = '1.16'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
