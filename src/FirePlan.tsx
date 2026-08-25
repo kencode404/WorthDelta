@@ -4,7 +4,6 @@ import {
   FlagCheckered,
   Info,
   MagicWand,
-  Path,
   Plus,
   Receipt,
   Sparkle,
@@ -186,22 +185,6 @@ export function FirePlan({ userId, categories, records, loading }: FirePlanProps
     })
   }
 
-  const startFromCurrent = () => {
-    const averages = new Map(expenseHistory.byCategory.map((item) => [item.category.id, item.monthlyAverage]))
-    setSettings((current) => ({
-      ...current,
-      idealBudgets: Object.fromEntries(expenseCategories.map((category) => [category.id, {
-        enabled: (averages.get(category.id) ?? 0) > 0,
-        amount: Math.round(averages.get(category.id) ?? 0),
-      }])),
-      targetMode: 'ideal',
-    }))
-  }
-
-  const applyPreset = (nominalReturn: number, inflation: number) => {
-    setSettings((current) => ({ ...current, nominalReturn, inflation }))
-  }
-
   const addCustomBudget = () => {
     setSettings((current) => ({
       ...current,
@@ -264,12 +247,12 @@ export function FirePlan({ userId, categories, records, loading }: FirePlanProps
 
         <section className="fire-assumptions" aria-labelledby="fire-assumptions-title">
           <div><p className="eyebrow">Assumptions</p><h3 id="fire-assumptions-title">Your sustainable return</h3></div>
-          <div className="fire-presets" aria-label="Assumption presets"><button type="button" onClick={() => applyPreset(4.5, 3.5)}>Cautious</button><button type="button" onClick={() => applyPreset(6, 3.5)}>Current</button><button type="button" onClick={() => applyPreset(7, 3)}>Optimistic</button></div>
           <div className="fire-assumption-fields">
             <label><span>Passive annual return</span><span className="fire-percent-input"><input type="number" min="0" max="100" step="0.1" value={settings.nominalReturn} onChange={(event) => setSettings((current) => ({ ...current, nominalReturn: Number(event.target.value) }))} /><b>%</b></span></label>
             <label><span>Inflation</span><span className="fire-percent-input"><input type="number" min="0" max="100" step="0.1" value={settings.inflation} onChange={(event) => setSettings((current) => ({ ...current, inflation: Number(event.target.value) }))} /><b>%</b></span></label>
             <div className="fire-real-return"><span>Real return for spending</span><strong>{(realReturn * 100).toFixed(1)}%</strong></div>
           </div>
+          <p className="fire-saved-note">Your latest edits save automatically on this device.</p>
           <p className="fire-helper">Return remaining after inflation, before taxes and investment fees.</p>
           {!validReturn && <p className="fire-return-warning">Your return must be higher than inflation to calculate a sustainable target.</p>}
         </section>
@@ -282,8 +265,6 @@ export function FirePlan({ userId, categories, records, loading }: FirePlanProps
           <span className="fire-card-icon"><MagicWand weight="duotone" aria-hidden="true" /></span>
           <div><p className="eyebrow">My ideal lifestyle</p><h2>Design your freedom</h2><p>Choose what you want your future years to include.</p></div>
         </header>
-
-        <button className="fire-copy-spending" type="button" onClick={startFromCurrent} disabled={expenseHistory.periods.length === 0}><Path weight="duotone" aria-hidden="true" />Start from my current spending</button>
 
         <div className="fire-budget-list">
           {expenseCategories.map((category) => {
@@ -304,7 +285,7 @@ export function FirePlan({ userId, categories, records, loading }: FirePlanProps
         <button className="fire-add-custom" type="button" onClick={addCustomBudget}><Plus aria-hidden="true" />Add custom category</button>
 
         <section className="fire-ideal-summary">
-          <div className="fire-summary-art" aria-hidden="true"><Path weight="duotone" /><Campfire weight="duotone" /></div>
+          <div className="fire-summary-art" aria-hidden="true"><Sparkle weight="duotone" /><Campfire weight="duotone" /></div>
           <p className="eyebrow">Your ideal life</p>
           <div className="fire-number-pair"><div><span>Monthly lifestyle</span><strong>{formatCurrency(idealMonthly)}</strong></div><div><span>Annual lifestyle</span><strong>{formatCurrency(idealAnnual)}</strong></div></div>
           <div className="fire-ideal-target"><span>Ideal forever-fund</span><strong>{validReturn && idealAnnual > 0 ? formatCurrency(idealTarget) : '—'}</strong></div>

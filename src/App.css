@@ -709,9 +709,6 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .fire-category-dot { width: 9px; height: 9px; border-radius: 3px; }
 .fire-assumptions { display: grid; gap: 13px; margin-top: 18px; padding: 17px; border: 2px solid #59998c; border-radius: 19px; background: rgba(255,255,255,.65); }
 .fire-assumptions h3 { margin: 0; color: var(--navy); font: 800 19px/1.1 'Baloo 2',sans-serif; }
-.fire-presets { display: flex; gap: 5px; }
-.fire-presets button { flex: 1 1 0; min-height: 36px; padding: 0 7px; border: 2px solid #9cc6bd; border-radius: 12px; color: #176b59; background: #effaf7; font-size: 10px; font-weight: 800; }
-.fire-presets button:hover { background: #dff4ef; }
 .fire-assumption-fields { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
 .fire-assumption-fields label { min-width: 0; color: var(--muted); font-size: 9px; }
 .fire-percent-input { position: relative; display: block; }
@@ -721,15 +718,15 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .fire-real-return span { display: block; color: var(--muted); font-size: 9px; font-weight: 700; }
 .fire-real-return strong { display: block; margin-top: 4px; color: var(--brand-dark); font: 800 20px/1 'Baloo 2',sans-serif; }
 .fire-helper { margin: -4px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.fire-saved-note { margin: -5px 0 -2px; color: var(--brand-dark); font-size: 9px; font-weight: 800; }
 .fire-return-warning { margin: 0; color: #913f46; background: #fff2f1; border-color: #b96868; }
 .fire-target-result { margin-top: 14px; padding: 18px; border: 3px solid #5f9f74; border-radius: 19px; background: #e5f5e7; box-shadow: 0 5px 0 rgba(64,121,79,.18); }
 .fire-target-result strong { display: block; margin: 5px 0 3px; color: var(--brand-dark); font: 800 clamp(28px,3vw,38px)/1 'Baloo 2',sans-serif; font-variant-numeric: tabular-nums; }
 .fire-target-result small { color: var(--muted); font-size: 10px; }
-.fire-copy-spending,.fire-add-custom { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 13px; border: 2px solid #9e802c; border-radius: 13px; color: #725914; background: #fffdf4; box-shadow: 0 3px 0 rgba(147,115,28,.16); font-size: 11px; font-weight: 800; }
-.fire-copy-spending { width: 100%; margin-top: 18px; }
-.fire-copy-spending svg,.fire-add-custom svg { width: 18px; height: 18px; }
+.fire-add-custom { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 13px; border: 2px solid #9e802c; border-radius: 13px; color: #725914; background: #fffdf4; box-shadow: 0 3px 0 rgba(147,115,28,.16); font-size: 11px; font-weight: 800; }
+.fire-add-custom svg { width: 18px; height: 18px; }
 .fire-budget-list { display: grid; gap: 8px; margin-top: 12px; }
-.fire-budget-row { display: grid; grid-template-columns: minmax(0,1fr) 124px; align-items: center; gap: 9px; padding: 9px 10px; border: 2px solid rgba(170,139,53,.35); border-radius: 15px; background: rgba(255,255,255,.58); }
+.fire-budget-row { display: grid; grid-template-columns: minmax(0,1fr) 88px; align-items: center; gap: 9px; min-height: 58px; padding: 9px 10px; border: 2px solid rgba(170,139,53,.35); border-radius: 15px; background: rgba(255,255,255,.58); }
 .fire-budget-row.enabled { border-color: #aa8b35; background: rgba(255,255,255,.86); }
 .fire-budget-toggle { display: flex; min-width: 0; grid-template-columns: none; align-items: center; gap: 8px; font-size: 11px; }
 .fire-budget-toggle > input[type='checkbox'] { position: absolute; width: 1px; height: 1px; opacity: 0; }
@@ -739,15 +736,15 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .fire-budget-toggle > input:checked + span::after { left: 17px; }
 .fire-budget-toggle > input:focus-visible + span { outline: 3px solid rgba(34,139,34,.28); outline-offset: 2px; }
 .fire-budget-toggle > b { font-size: 15px; }
-.fire-budget-toggle > strong { min-width: 0; overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
+.fire-budget-toggle > strong { display: -webkit-box; min-width: 0; overflow: hidden; color: var(--ink); -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.25; }
 .fire-budget-amount { position: relative; display: block; }
-.fire-budget-amount > b { position: absolute; z-index: 1; top: 50%; left: 9px; color: var(--muted); font-size: 9px; transform: translateY(-50%); }
-.fire-budget-amount input { min-height: 40px; padding: 0 8px 0 28px; background: #fff; font-size: 13px; font-weight: 800; }
+.fire-budget-amount > b { position: absolute; z-index: 1; top: 50%; left: 7px; color: var(--muted); font-size: 8px; transform: translateY(-50%); }
+.fire-budget-amount input { min-height: 36px; padding: 0 5px 0 24px; background: #fff; font-size: 11px; font-weight: 800; }
 .fire-custom-name { min-height: 37px; padding: 0 8px; border-width: 1px; border-radius: 9px; font-size: 11px; font-weight: 800; }
 .fire-budget-custom-info { display: flex; min-width: 0; align-items: center; gap: 8px; }
 .fire-budget-custom-info .fire-budget-toggle { flex: 0 0 auto; }
 .fire-budget-custom-info .fire-custom-name { min-width: 0; }
-.fire-budget-row.custom { grid-template-columns: minmax(0,1fr) 112px 36px; }
+.fire-budget-row.custom { grid-template-columns: minmax(0,1fr) 88px 36px; }
 .fire-remove-custom { display: grid; width: 36px; height: 36px; padding: 0; place-items: center; border: 0; border-radius: 10px; color: #913f46; background: #ffe7e5; }
 .fire-remove-custom svg { width: 17px; height: 17px; }
 .fire-add-custom { margin-top: 10px; }
@@ -786,7 +783,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .fire-mini-column small { font-size: 7px; }
   .fire-assumption-fields { grid-template-columns: 1fr 1fr; }
   .fire-real-return { grid-column: 1 / -1; }
-  .fire-budget-row,.fire-budget-row.custom { grid-template-columns: minmax(0,1fr) 106px; }
+  .fire-budget-row,.fire-budget-row.custom { grid-template-columns: minmax(0,1fr) 82px; }
   .fire-budget-row.custom .fire-remove-custom { grid-column: 2; justify-self: end; }
   .fire-custom-name { min-width: 0; }
   .fire-ideal-target { align-items: flex-start; flex-direction: column; }
