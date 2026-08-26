@@ -3,7 +3,8 @@
 :root {
   font-family: 'Nunito', system-ui, sans-serif;
   color: #14233f;
-  background: #ffffff;
+  /* This canvas is visible while iOS rubber-bands the page down. */
+  background: #228b22;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -27,8 +28,8 @@
 }
 
 * { box-sizing: border-box; }
-html { min-width: 320px; scroll-behavior: smooth; touch-action: pan-x pan-y; }
-body { min-width: 320px; min-height: 100vh; margin: 0; overflow-x: hidden; overscroll-behavior-x: none; }
+html { min-width: 320px; min-height: 100%; background: #228b22; scroll-behavior: smooth; touch-action: pan-x pan-y; }
+body { min-width: 320px; min-height: 100vh; margin: 0; overflow-x: hidden; background: #228b22; overscroll-behavior-x: none; }
 button, input, select { font: inherit; }
 button, a { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
