@@ -129,13 +129,27 @@ const getPreviousMonthPeriod = (period: string) => {
 const defaultEntryDate = (period: string) => {
   const today = new Date()
   const iso = today.toISOString().slice(0, 10)
-  if (period.slice(0, 7) === iso.slice(0, 7)) return iso
+  const month = period.slice(0, 7)
+  if (month === iso.slice(0, 7)) return iso
+  // Nothing has happened yet in a month that has not arrived, so there is no
+  // day in it to borrow from today. Something entered ahead of time belongs at
+  // the start of the month it is being planned for.
+  if (month > iso.slice(0, 7)) return `${month}-01`
+  // A month already gone keeps today's day-of-month, short ones clamped to
+  // their last day.
   const year = Number(period.slice(0, 4))
-  const month = Number(period.slice(5, 7))
-  const lastDay = new Date(year, month, 0).getDate()
+  const monthNumber = Number(period.slice(5, 7))
+  const lastDay = new Date(year, monthNumber, 0).getDate()
   const day = Math.min(today.getDate(), lastDay)
-  return `${period.slice(0, 7)}-${String(day).padStart(2, '0')}`
+  return `${month}-${String(day).padStart(2, '0')}`
 }
+
+/**
+ * Expenses and investments are things bought; assets and income are money
+ * arriving, which comes from somewhere rather than going to something.
+ */
+const remarkPlaceholder = (type: CategoryType) =>
+  type === 'expense' || type === 'investment' ? 'What did you buy?' : 'Fund sources?'
 
 const addMonths = (date: string, count: number) => {
   const day = Number(date.slice(8, 10))
@@ -489,11 +503,14 @@ function OverspendWarning() {
 
 function EditableLedgerEntryRow({
   entry,
+  type,
   saving,
   onSave,
   onDelete,
 }: {
   entry: LedgerEntry
+  /** which side of the ledger this row sits on, for what the remark asks for */
+  type: CategoryType
   saving: boolean
   onSave: (entry: LedgerEntry, amount: number, description: string) => Promise<boolean>
   onDelete: (entry: LedgerEntry) => Promise<boolean>
@@ -520,7 +537,7 @@ function EditableLedgerEntryRow({
 
   return <form className="category-entry-row" onSubmit={(event) => void handleSubmit(event)}>
     <div className="category-entry-meta"><strong>{formatEntryDate(entry.entry_date)}</strong></div>
-    <label className="category-entry-remark"><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What did you buy?" maxLength={200} /></label>
+    <label className="category-entry-remark"><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder={remarkPlaceholder(type)} maxLength={200} /></label>
     <label className="category-entry-amount"><span>Amount (MYR)</span><input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
     <button className="category-entry-save" type="submit" aria-label={`Save the ${formatEntryDate(entry.entry_date)} entry`} disabled={saving || !valid || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}</button>
     <button className="category-entry-delete" type="button" aria-label={`Delete the ${formatEntryDate(entry.entry_date)} entry`} disabled={saving} onClick={() => setConfirmingDelete(true)}><Trash aria-hidden="true" /></button>
@@ -2531,7 +2548,7 @@ function Dashboard({ session }: { session: Session }) {
                 {ungroupedTypeCategories.length > 0 && <optgroup label="Unassigned">{ungroupedTypeCategories.map((category) => <option key={category.id} value={category.name}>{optionLabel(category)}</option>)}</optgroup>}
               </> : filteredCategories.map((category) => <option key={category.id} value={category.name}>{optionLabel(category)}</option>)}</select></label>}
               {filteredCategories.length === 0 && <a className="dialog-settings-link" href="#settings" onClick={() => setEntryDialogOpen(false)}><GearSix aria-hidden="true" />Open category settings</a>}
-              <label><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What did you buy?" maxLength={200} /></label>
+              <label><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder={remarkPlaceholder(type)} maxLength={200} /></label>
               <div className="form-row"><label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} required /></label><label><span>Amount</span><div className="amount-field"><select value={currency} onChange={(event) => setCurrency(event.target.value)} aria-label="Currency">{CURRENCIES.map((code) => <option key={code} value={code}>{code}</option>)}</select><input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div></label></div>
               {currency !== 'MYR' && <p className={`rate-hint ${rate && !rateLive ? 'stale' : ''}`} role="status">{rateLoading && !rate
                 ? 'Fetching today’s rate…'
@@ -2568,7 +2585,7 @@ function Dashboard({ session }: { session: Session }) {
           {selectedCategoryEntries && selectedCategorySummary && <div className="entry-dialog-card category-entries-card">
             <header className="entry-dialog-heading"><div><p className="eyebrow">{categoryMeta[selectedCategoryEntries.type].label} · {formatMonth(selectedCategoryEntries.period)}</p><h2 id="category-entries-title">{selectedCategorySummary.icon && <span className="heading-emoji" aria-hidden="true">{selectedCategorySummary.icon}</span>}{selectedCategorySummary.name}</h2><p>{categoryLedgerEntries.length} {categoryLedgerEntries.length === 1 ? 'entry' : 'entries'} · {formatCurrency(selectedCategorySummary.amount)} category total</p></div><button type="button" onClick={() => setSelectedCategoryEntries(null)} aria-label="Close category entries"><X aria-hidden="true" /></button></header>
             <div className={`entry-type-badge ${selectedCategoryEntries.type}`}><SelectedCategoryIcon weight="duotone" aria-hidden="true" /><span>Amount and remark details</span></div>
-            {categoryLedgerEntries.length === 0 ? <div className="category-entry-empty"><Receipt aria-hidden="true" /><strong>No itemised entries for this month</strong><p>The category total exists, but no amount-and-remark breakdown is available.</p></div> : <div className="category-entry-list">{categoryLedgerEntries.map((entry) => <EditableLedgerEntryRow key={entry.id} entry={entry} saving={entryEditSavingId === entry.id} onSave={handleUpdateLedgerEntry} onDelete={handleDeleteLedgerEntry} />)}</div>}
+            {categoryLedgerEntries.length === 0 ? <div className="category-entry-empty"><Receipt aria-hidden="true" /><strong>No itemised entries for this month</strong><p>The category total exists, but no amount-and-remark breakdown is available.</p></div> : <div className="category-entry-list">{categoryLedgerEntries.map((entry) => <EditableLedgerEntryRow key={entry.id} entry={entry} type={selectedCategoryEntries.type} saving={entryEditSavingId === entry.id} onSave={handleUpdateLedgerEntry} onDelete={handleDeleteLedgerEntry} />)}</div>}
           </div>}
         </dialog>
       </main>
