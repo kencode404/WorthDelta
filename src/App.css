@@ -29,7 +29,7 @@
 .divider { display: flex; align-items: center; gap: 14px; margin: 24px 0; color: #8b9791; font-size: 12px; }
 .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 form { display: grid; gap: 18px; }
-label { display: grid; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 700; }
+label, .field { display: grid; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 700; }
 label small { color: var(--muted); font-weight: 400; }
 input, select { width: 100%; min-height: 48px; padding: 0 14px; border: 2px solid #c8d1e2; border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 16px; }
 input:hover, select:hover { border-color: #9baac4; }
@@ -530,7 +530,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .category-entry-row { position: relative; display: grid; grid-template-columns: minmax(96px, .55fr) minmax(190px, 1.5fr) minmax(120px, .7fr) 42px 38px; align-items: end; gap: 9px; padding: 12px; border: 1px solid rgba(23, 46, 87, .14); border-radius: 15px; background: #fff; box-shadow: 0 3px 0 rgba(23, 46, 87, .08); }
 .category-entry-meta { align-self: center; min-width: 0; }
 .category-entry-meta strong { display: block; overflow: hidden; color: var(--navy); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.category-entry-row label { min-width: 0; gap: 4px; color: var(--muted); font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
+.category-entry-row label, .category-entry-row .field { min-width: 0; gap: 4px; color: var(--muted); font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
 .category-entry-row input { min-height: 42px; padding: 0 10px; border-radius: 11px; font-size: 13px; font-weight: 700; letter-spacing: 0; text-transform: none; }
 .category-entry-save { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; border: 0; border-radius: 11px; color: #fff; background: var(--brand); box-shadow: 0 3px 0 #0d4f13; }
 .category-entry-save:hover { background: #197719; }
@@ -913,11 +913,13 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .entry-dialog-heading h2 { font-size: 20px; }
   .entry-dialog-heading > button { width: 38px; height: 38px; border-radius: 11px; }
   .entry-dialog form { gap: 9px; }
-  .entry-dialog label { gap: 4px; font-size: 11px; }
+  .entry-dialog label, .entry-dialog .field { gap: 4px; font-size: 11px; }
   .entry-dialog input, .entry-dialog select { min-height: 38px; padding: 0 10px; border-radius: 11px; font-size: 14px; }
-  .entry-dialog .amount-field { grid-template-columns: 66px 34px minmax(0, 1fr); gap: 6px; }
+  .entry-dialog .amount-field { grid-template-columns: 58px 34px minmax(0, 1fr); gap: 6px; }
   .entry-dialog .amount-field select { padding: 0 4px 0 8px; font-size: 12px; }
-  .entry-dialog .form-row { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; }
+  /* The date needs only enough for dd/mm/yyyy. Everything else goes to the
+     amount, which now carries a currency picker and a sign button too. */
+  .entry-dialog .form-row { grid-template-columns: 106px minmax(0, 1fr); gap: 8px; }
   .entry-dialog input[type="date"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; padding: 0 8px; overflow: hidden; font-size: 13px; }
   .entry-dialog input[type="date"]::-webkit-datetime-edit { min-width: 0; padding: 0; overflow: hidden; }
   .entry-dialog input[type="date"]::-webkit-date-and-time-value { margin: 0; text-align: left; }
