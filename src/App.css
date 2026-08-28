@@ -270,7 +270,17 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .chart-empty, .loading-state { display: grid; place-items: center; min-height: 270px; color: var(--muted); font-size: 14px; }
 .loading-state { display: flex; gap: 10px; }
 .add-panel form { margin-top: 24px; }
-.amount-field { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 7px; }
+.amount-field { display: grid; grid-template-columns: 76px 40px minmax(0, 1fr); gap: 7px; }
+
+/* iOS gives inputMode="decimal" a keypad with no minus key, so the sign cannot
+   be typed on a phone. This flips it instead, and shows which way it is set. */
+.amount-sign { min-width: 0; padding: 0; border: 2px solid var(--panel-border); border-radius: 12px; background: var(--surface); color: var(--muted); font-size: 17px; font-weight: 800; line-height: 1; }
+.amount-sign.negative { border-color: #d5453b; background: #fdeceb; color: #b3312a; }
+
+/* the same toggle where there is no currency select to sit beside */
+.amount-with-sign { display: flex; gap: 6px; min-width: 0; }
+.amount-with-sign input { flex: 1; min-width: 0; }
+.amount-with-sign .amount-sign { flex: 0 0 34px; }
 .amount-field select { min-width: 0; padding: 0 6px 0 10px; font-size: 13px; font-weight: 700; letter-spacing: .02em; }
 .repeat-field { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; }
 .repeat-field select { min-height: 40px; font-size: 13px; }
@@ -905,7 +915,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   .entry-dialog form { gap: 9px; }
   .entry-dialog label { gap: 4px; font-size: 11px; }
   .entry-dialog input, .entry-dialog select { min-height: 38px; padding: 0 10px; border-radius: 11px; font-size: 14px; }
-  .entry-dialog .amount-field { grid-template-columns: 66px minmax(0, 1fr); gap: 6px; }
+  .entry-dialog .amount-field { grid-template-columns: 66px 34px minmax(0, 1fr); gap: 6px; }
   .entry-dialog .amount-field select { padding: 0 4px 0 8px; font-size: 12px; }
   .entry-dialog .form-row { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; }
   .entry-dialog input[type="date"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; padding: 0 8px; overflow: hidden; font-size: 13px; }

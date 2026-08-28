@@ -151,6 +151,19 @@ const defaultEntryDate = (period: string) => {
 const remarkPlaceholder = (type: CategoryType) =>
   type === 'expense' || type === 'investment' ? 'What did you buy?' : 'Fund sources?'
 
+const isNegativeAmount = (value: string) => value.trim().startsWith('-')
+
+/**
+ * Turns an amount negative and back.
+ *
+ * A phone keypad has no minus key — iOS gives inputMode="decimal" digits and a
+ * separator and nothing else — so a sign that cannot be typed has to be
+ * toggled. An empty box is left alone: a lone '-' is not a number, and the
+ * field would refuse to hold it.
+ */
+const flipAmountSign = (value: string) =>
+  isNegativeAmount(value) ? value.trim().slice(1) : value.trim() === '' ? value : `-${value.trim()}`
+
 const addMonths = (date: string, count: number) => {
   const day = Number(date.slice(8, 10))
   const target = new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1 + count, 1)
@@ -526,7 +539,9 @@ function EditableLedgerEntryRow({
 
   const numericAmount = Number(amount)
   const trimmedDescription = description.trim()
-  const valid = amount.trim() !== '' && Number.isFinite(numericAmount) && numericAmount >= 0
+  // Negatives are allowed: a correction, a refund, a reversal. Any finite
+  // number will do, and zero is a legitimate amount to settle on.
+  const valid = amount.trim() !== '' && Number.isFinite(numericAmount)
   const unchanged = numericAmount === Number(entry.amount) && trimmedDescription === entry.description
 
   async function handleSubmit(event: React.FormEvent) {
@@ -538,7 +553,7 @@ function EditableLedgerEntryRow({
   return <form className="category-entry-row" onSubmit={(event) => void handleSubmit(event)}>
     <div className="category-entry-meta"><strong>{formatEntryDate(entry.entry_date)}</strong></div>
     <label className="category-entry-remark"><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder={remarkPlaceholder(type)} maxLength={200} /></label>
-    <label className="category-entry-amount"><span>Amount (MYR)</span><input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
+    <label className="category-entry-amount"><span>Amount (MYR)</span><div className="amount-with-sign"><button type="button" className={`amount-sign ${isNegativeAmount(amount) ? 'negative' : ''}`} aria-label={isNegativeAmount(amount) ? 'Make the amount positive' : 'Make the amount negative'} aria-pressed={isNegativeAmount(amount)} onClick={() => setAmount(flipAmountSign(amount))}>{isNegativeAmount(amount) ? '−' : '+'}</button><input type="number" inputMode="decimal" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></div></label>
     <button className="category-entry-save" type="submit" aria-label={`Save the ${formatEntryDate(entry.entry_date)} entry`} disabled={saving || !valid || unchanged}>{saving ? <SpinnerGap className="spin" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}</button>
     <button className="category-entry-delete" type="button" aria-label={`Delete the ${formatEntryDate(entry.entry_date)} entry`} disabled={saving} onClick={() => setConfirmingDelete(true)}><Trash aria-hidden="true" /></button>
     {confirmingDelete && <div className="entry-delete-confirm" role="alert">
@@ -2549,7 +2564,7 @@ function Dashboard({ session }: { session: Session }) {
               </> : filteredCategories.map((category) => <option key={category.id} value={category.name}>{optionLabel(category)}</option>)}</select></label>}
               {filteredCategories.length === 0 && <a className="dialog-settings-link" href="#settings" onClick={() => setEntryDialogOpen(false)}><GearSix aria-hidden="true" />Open category settings</a>}
               <label><span>Remark</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder={remarkPlaceholder(type)} maxLength={200} /></label>
-              <div className="form-row"><label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} required /></label><label><span>Amount</span><div className="amount-field"><select value={currency} onChange={(event) => setCurrency(event.target.value)} aria-label="Currency">{CURRENCIES.map((code) => <option key={code} value={code}>{code}</option>)}</select><input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div></label></div>
+              <div className="form-row"><label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} required /></label><label><span>Amount</span><div className="amount-field"><select value={currency} onChange={(event) => setCurrency(event.target.value)} aria-label="Currency">{CURRENCIES.map((code) => <option key={code} value={code}>{code}</option>)}</select><button type="button" className={`amount-sign ${isNegativeAmount(amount) ? 'negative' : ''}`} aria-label={isNegativeAmount(amount) ? 'Make the amount positive' : 'Make the amount negative'} aria-pressed={isNegativeAmount(amount)} onClick={() => setAmount(flipAmountSign(amount))}>{isNegativeAmount(amount) ? '−' : '+'}</button><input type="number" inputMode="decimal" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div></label></div>
               {currency !== 'MYR' && <p className={`rate-hint ${rate && !rateLive ? 'stale' : ''}`} role="status">{rateLoading && !rate
                 ? 'Fetching today’s rate…'
                 : !rate
