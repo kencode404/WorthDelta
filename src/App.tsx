@@ -51,7 +51,7 @@ import {
 import { clearEvents, describeEvents, logEvent } from './lib/diagnostics'
 import { fetchMyrRate } from './lib/exchangeRate'
 import { captureChartImage, downloadWorkbook } from './lib/exportWorkbook'
-import { ensureFreshSession, isExpiredTokenError, supabase } from './lib/supabase'
+import { ensureFreshSession, isClockSkewError, isExpiredTokenError, supabase } from './lib/supabase'
 import { ReturnsView } from './ReturnsView'
 import { FirePlan } from './FirePlan'
 import type { CategoryType, ExpenseGroup, FinancialCategory, LedgerEntry, MonthlyRecord } from './types'
@@ -279,7 +279,16 @@ const monthOptions = Array.from({ length: 12 }, (_, index) => {
   }
 })
 
+/** Ends a sentence that a server wrote without one, so the next can follow it. */
+const endWithStop = (text: string) => {
+  const trimmed = text.trim()
+  return !trimmed || /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`
+}
+
 const messageFrom = (error: unknown) => {
+  // "JWT issued at future" is the server's way of saying the clocks disagree,
+  // and means nothing to anyone reading it. Say what it is and what fixes it.
+  if (isClockSkewError(error)) return "This device's clock is ahead of the server, so it would not accept the sign-in. Turning on automatic date and time in Settings usually settles it."
   if (error instanceof Error) return error.message
   if (
     typeof error === 'object' &&
@@ -1745,8 +1754,9 @@ function Dashboard({ session }: { session: Session }) {
       setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
       setLoadError('')
     } catch (error) {
-      // a token that lapsed in the background is worth one silent retry
-      if (isExpiredTokenError(error) && !isRetry) {
+      // a token that lapsed in the background, or one the server reads as
+      // postdated, is worth one silent retry: both are fixed by a fresh one
+      if ((isExpiredTokenError(error) || isClockSkewError(error)) && !isRetry) {
         const { data } = await supabase.auth.refreshSession()
         if (data.session) return loadData(false, true)
       }
@@ -2460,7 +2470,7 @@ function Dashboard({ session }: { session: Session }) {
       <main className="dashboard-main">
         <header className="dashboard-header"><div><h1>{viewCopy.title}</h1><p className="header-subtitle"><strong>{viewCopy.lead}</strong><span aria-hidden="true">·</span><span>{viewCopy.detail}</span></p></div><div className="header-actions"><span className={`sync-status ${syncStatus}`} role="status" aria-live="polite"><SyncIcon className={syncStatus === 'syncing' ? 'spin' : ''} aria-hidden="true" />{syncLabel}</span></div></header>
 
-        {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>{databaseSetupRequired ? 'Database setup required' : 'Sync paused'}</strong><p>{databaseSetupRequired ? 'Run the included migrations to enable expense groups and editable category assignments.' : `${loadError} Your locally saved changes are safe and will retry automatically.`}</p>{databaseSetupRequired && <code>supabase/migrations/20260817000000_expense_groups_and_editable_categories.sql</code>}</div></section>}
+        {loadError && <section className="setup-banner" role="alert"><Database aria-hidden="true" /><div><strong>{databaseSetupRequired ? 'Database setup required' : 'Sync paused'}</strong><p>{databaseSetupRequired ? 'Run the included migrations to enable expense groups and editable category assignments.' : `${endWithStop(loadError)} Your locally saved changes are safe and will retry automatically.`}</p>{databaseSetupRequired && <code>supabase/migrations/20260817000000_expense_groups_and_editable_categories.sql</code>}</div></section>}
         {notice && <p className="notice" role="status">{notice}</p>}
 
         {view === 'overview' ? <>

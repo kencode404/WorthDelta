@@ -29,3 +29,17 @@ export function isExpiredTokenError(error: unknown) {
   const message = String((error as { message?: string })?.message ?? error ?? '').toLowerCase()
   return code === 'PGRST301' || code === '401' || message.includes('jwt expired') || message.includes('invalid claim')
 }
+
+/**
+ * The opposite complaint to an expired token: a token stamped with a moment
+ * that has not arrived yet.
+ *
+ * The server compares the token's issued-at against its own clock and refuses
+ * anything from the future, so a device running ahead has its requests turned
+ * away with "JWT issued at future". Worth the same silent retry an expiry
+ * gets — a fresh token is stamped again, and often that is enough.
+ */
+export function isClockSkewError(error: unknown) {
+  const message = String((error as { message?: string })?.message ?? error ?? '').toLowerCase()
+  return message.includes('issued at future') || message.includes('issued in the future')
+}
