@@ -1204,6 +1204,80 @@ function YearSparkline({ points }: { points: AnnualSummary['assetTrend'] }) {
   </div>
 }
 
+export interface BreakdownSlice {
+  id: string
+  name: string
+  icon?: string | null
+  total: number
+  /** period → total for that month, for the list behind a chosen slice */
+  months: Map<string, number>
+}
+
+/**
+ * A ring of one year's categories, each sized by its share.
+ *
+ * Sized on absolute value, because an amount can now be negative and a refund
+ * has no meaningful share of a circle. The signed figure is what the legend
+ * reports, so a category that nets below zero still reads correctly there.
+ */
+function CategoryDonut({ slices, selectedId, onSelect }: {
+  slices: BreakdownSlice[]
+  selectedId: string | null
+  onSelect: (id: string | null) => void
+}) {
+  const size = 188
+  const outer = 86
+  const inner = 52
+  const centre = size / 2
+  const weights = slices.map((slice) => Math.abs(slice.total))
+  const weighed = weights.reduce((sum, weight) => sum + weight, 0)
+  if (weighed <= 0) return <p className="breakdown-empty">Nothing recorded for this year.</p>
+
+  const ring = (color: string, key: string, onClick: () => void, dimmed: boolean) =>
+    <circle
+      key={key}
+      className={`breakdown-arc ${dimmed ? 'dimmed' : ''}`}
+      cx={centre}
+      cy={centre}
+      r={(outer + inner) / 2}
+      fill="none"
+      stroke={color}
+      strokeWidth={outer - inner}
+      onClick={onClick}
+    />
+
+  let angle = -Math.PI / 2
+  const arcs = slices.map((slice, index) => {
+    const share = Math.abs(slice.total) / weighed
+    const color = chartColors[index % chartColors.length]
+    const dimmed = selectedId !== null && selectedId !== slice.id
+    const choose = () => onSelect(selectedId === slice.id ? null : slice.id)
+    // A lone category would sweep the whole circle, and an arc that ends where
+    // it began draws nothing at all. A plain ring is the same shape.
+    if (share >= 0.9999) return ring(color, slice.id, choose, dimmed)
+    const start = angle
+    const end = angle + share * Math.PI * 2
+    angle = end
+    const large = end - start > Math.PI ? 1 : 0
+    const path = [
+      `M${centre + outer * Math.cos(start)} ${centre + outer * Math.sin(start)}`,
+      `A${outer} ${outer} 0 ${large} 1 ${centre + outer * Math.cos(end)} ${centre + outer * Math.sin(end)}`,
+      `L${centre + inner * Math.cos(end)} ${centre + inner * Math.sin(end)}`,
+      `A${inner} ${inner} 0 ${large} 0 ${centre + inner * Math.cos(start)} ${centre + inner * Math.sin(start)}`,
+      'Z',
+    ].join(' ')
+    return <path key={slice.id} className={`breakdown-arc ${dimmed ? 'dimmed' : ''}`} d={path} fill={color} onClick={choose} />
+  })
+
+  const chosen = slices.find((slice) => slice.id === selectedId) ?? null
+  const shown = chosen ? Math.abs(chosen.total) / weighed : 1
+  return <svg className="breakdown-donut" viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Category shares for the year">
+    {arcs}
+    <text className="breakdown-donut-value" x={centre} y={centre - 2} textAnchor="middle">{`${Math.round(shown * 100)}%`}</text>
+    <text className="breakdown-donut-label" x={centre} y={centre + 15} textAnchor="middle">{chosen ? 'of the year' : 'all categories'}</text>
+  </svg>
+}
+
 function LiquidAssetIndicator({
   period,
   assets,
@@ -1517,6 +1591,9 @@ function Dashboard({ session }: { session: Session }) {
   const [rateLoading, setRateLoading] = useState(false)
   const [scrollTargetSection, setScrollTargetSection] = useState<CategoryType | null>(null)
   const [selectedCategoryEntries, setSelectedCategoryEntries] = useState<{ type: CategoryType; category: CategoryBreakdown; period: string } | null>(null)
+  // which figure on a year card was opened, and which slice of it is being read
+  const [breakdown, setBreakdown] = useState<{ year: number; type: CategoryType } | null>(null)
+  const [breakdownSliceId, setBreakdownSliceId] = useState<string | null>(null)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [categorySaving, setCategorySaving] = useState<CategoryType | null>(null)
@@ -1540,6 +1617,7 @@ function Dashboard({ session }: { session: Session }) {
   const entryDialogRef = useRef<HTMLDialogElement>(null)
   const categoryPickerRef = useRef<HTMLDialogElement>(null)
   const categoryEntriesDialogRef = useRef<HTMLDialogElement>(null)
+  const breakdownDialogRef = useRef<HTMLDialogElement>(null)
   const floatingAddButtonRef = useRef<HTMLButtonElement>(null)
   const firstTypeButtonRef = useRef<HTMLButtonElement>(null)
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null)
@@ -1604,6 +1682,42 @@ function Dashboard({ session }: { session: Session }) {
     if (selectedCategoryEntries && !dialog.open) dialog.showModal()
     if (!selectedCategoryEntries && dialog.open) dialog.close()
   }, [selectedCategoryEntries])
+
+  useEffect(() => {
+    const dialog = breakdownDialogRef.current
+    if (!dialog) return
+    if (breakdown && !dialog.open) dialog.showModal()
+    if (!breakdown && dialog.open) dialog.close()
+  }, [breakdown])
+
+  // a different year or figure starts again with nothing chosen
+  useEffect(() => { setBreakdownSliceId(null) }, [breakdown])
+
+  /** One year's categories of one type, each with its months kept for the list. */
+  const breakdownSlices = useMemo<BreakdownSlice[]>(() => {
+    if (!breakdown) return []
+    const totals = new Map<string, BreakdownSlice>()
+    records.forEach((record) => {
+      if (Number(record.period.slice(0, 4)) !== breakdown.year) return
+      if (record.financial_categories?.category_type !== breakdown.type) return
+      const slice = totals.get(record.category_id) ?? {
+        id: record.category_id,
+        name: record.financial_categories?.name ?? 'Uncategorised',
+        icon: categories.find((category) => category.id === record.category_id)?.icon,
+        total: 0,
+        months: new Map<string, number>(),
+      }
+      const value = Number(record.amount)
+      slice.total += value
+      slice.months.set(record.period, (slice.months.get(record.period) ?? 0) + value)
+      totals.set(record.category_id, slice)
+    })
+    return [...totals.values()].sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
+  }, [breakdown, categories, records])
+
+  const breakdownTotal = breakdownSlices.reduce((sum, slice) => sum + slice.total, 0)
+  const breakdownWeighed = breakdownSlices.reduce((sum, slice) => sum + Math.abs(slice.total), 0)
+  const breakdownChosen = breakdownSlices.find((slice) => slice.id === breakdownSliceId) ?? null
 
   useEffect(() => {
     if (!addMenuOpen) return
@@ -1979,8 +2093,48 @@ function Dashboard({ session }: { session: Session }) {
       .sort((a, b) => b.entry_date.localeCompare(a.entry_date) || (b.created_at ?? '').localeCompare(a.created_at ?? ''))
   }, [entries, selectedCategoryEntries])
 
+  // Every amount is held twice: once as an entry, once inside the month's
+  // total. They are meant to agree, and a total that is not adjusted alongside
+  // its entries drifts quietly and forever. Showing the gap is what makes it
+  // fixable — the app cannot tell drift from a figure deliberately entered as a
+  // lump sum, so it reports and offers rather than correcting on its own.
+  const ledgerEntriesTotal = categoryLedgerEntries.reduce((sum, entry) => sum + Number(entry.amount), 0)
+  const categoryTotalGap = selectedCategorySummary && categoryLedgerEntries.length > 0
+    ? Number(selectedCategorySummary.amount) - ledgerEntriesTotal
+    : 0
+
+  async function repairCategoryTotal() {
+    if (!selectedCategoryEntries) return
+    if (!navigator.onLine) return setNotice('Reconnect to correct the total.')
+    const monthly = records.find((record) =>
+      record.period === selectedCategoryEntries.period && record.category_id === selectedCategoryEntries.category.id,
+    )
+    if (!monthly) return setNotice('That month has no total to correct.')
+    setSyncStatus('syncing')
+    setNotice('')
+    try {
+      const { error } = await supabase
+        .from('worthdelta_monthly_records')
+        .update({ amount: ledgerEntriesTotal })
+        .eq('id', monthly.id)
+        .eq('user_id', session.user.id)
+      if (error) throw error
+      const remote = await refreshRemoteSnapshot(session.user.id)
+      showSnapshot(remote.snapshot)
+      setPendingCount(remote.pendingCount)
+      setSyncStatus(remote.pendingCount > 0 ? 'pending' : 'synced')
+      setNotice('Total corrected to match the entries below it.')
+    } catch (error) {
+      setSyncStatus(navigator.onLine ? 'pending' : 'offline')
+      setNotice(messageFrom(error))
+    }
+  }
+
   async function saveLedgerEntry(entry: LedgerEntry, nextAmount: number, nextDescription: string) {
-    if (!Number.isFinite(nextAmount) || nextAmount < 0) return false
+    // Any finite number. The floor here outlived the one on the input: editing
+    // an entry to a negative returned false and said nothing, so a correction
+    // could be typed, saved, and silently discarded.
+    if (!Number.isFinite(nextAmount)) return false
     const category = categories.find((item) => item.id === entry.category_id) ?? categories.find((item) =>
       item.category_type === entry.financial_categories?.category_type &&
       item.name.toLocaleLowerCase('en') === entry.financial_categories?.name.toLocaleLowerCase('en'),
@@ -2317,21 +2471,29 @@ function Dashboard({ session }: { session: Session }) {
         .eq('user_id', session.user.id)
       if (error) throw error
 
-      // the monthly total is stored separately, so take the amount off it too
-      const monthly = records.find((record) =>
-        record.period === entry.period &&
-        record.financial_categories?.category_type === entry.financial_categories?.category_type &&
-        record.financial_categories?.name.toLocaleLowerCase('en') === entry.financial_categories?.name.toLocaleLowerCase('en'),
-      )
-      if (monthly) {
-        const nextAmount = Math.max(0, Number(monthly.amount) - Number(entry.amount))
-        const { error: recordError } = await supabase
-          .from('worthdelta_monthly_records')
-          .update({ amount: nextAmount })
-          .eq('id', monthly.id)
-          .eq('user_id', session.user.id)
-        if (recordError) throw recordError
-      }
+      // The monthly total is a row of its own, so the amount has to come off it
+      // as well as off the entry.
+      //
+      // By category_id first. Matching on name and type alone found nothing
+      // whenever the entry arrived without its category joined, or found the
+      // wrong row where two categories share a name — and the miss was silent,
+      // so the entry went and the total kept the money. The name match stays as
+      // a fallback for entries written before rows were linked by id.
+      const monthly = records.find((record) => record.period === entry.period && record.category_id === entry.category_id)
+        ?? records.find((record) =>
+          record.period === entry.period &&
+          record.financial_categories?.category_type === entry.financial_categories?.category_type &&
+          record.financial_categories?.name.toLocaleLowerCase('en') === entry.financial_categories?.name.toLocaleLowerCase('en'),
+        )
+      if (!monthly) throw new Error('Deleted the entry, but its monthly total could not be found to adjust. Reload and check the figure for that month.')
+      // No floor. An amount can be negative now, so a total is allowed below
+      // zero; clamping it there quietly rewrote the figure instead.
+      const { error: recordError } = await supabase
+        .from('worthdelta_monthly_records')
+        .update({ amount: Number(monthly.amount) - Number(entry.amount) })
+        .eq('id', monthly.id)
+        .eq('user_id', session.user.id)
+      if (recordError) throw recordError
 
       setEntries((current) => current.filter((item) => item.id !== entry.id))
       const remote = await refreshRemoteSnapshot(session.user.id)
@@ -2491,7 +2653,17 @@ function Dashboard({ session }: { session: Session }) {
           <div className="year-progress-grid">{[...annualSummaries].reverse().map((year) => <article className="year-card" key={year.year}>
             <div className="year-card-heading"><div><span>{year.year}</span><strong>{formatCurrency(year.netWorth)}</strong><small>{year.year === currentYear ? 'Current worth' : 'Closing worth'}</small></div><span className={`year-change ${year.netWorthChange < 0 ? 'negative' : ''}`}>{year.netWorthChange >= 0 ? '+' : ''}{formatCurrency(year.netWorthChange)}{year.netWorthChangePercent !== null && <small>{changeLabel(year.netWorthChangePercent)}</small>}</span></div>
             <YearSparkline points={year.assetTrend} />
-            <dl><div><dt>Income</dt><dd>{formatCurrency(year.income)}</dd></div><div><dt>Expenses</dt><dd>{formatCurrency(year.expenses)}</dd></div><div><dt>Invested</dt><dd>{formatCurrency(year.investments)}{year.income > 0 && <span className="dd-ratio">({Math.round((year.investments / year.income) * 100)}%)</span>}</dd></div><div><dt>Savings rate</dt><dd>{Math.round(year.savingsRate)}%</dd></div></dl>
+            {/*
+              Income, Expenses and Invested open a breakdown of that year; the
+              savings rate is a ratio of the others and has nothing of its own
+              to break down, so it stays plain text.
+            */}
+            <dl>
+              <div><dt>Income</dt><dd><button type="button" className="dd-open" onClick={() => setBreakdown({ year: year.year, type: 'income' })}>{formatCurrency(year.income)}<CaretDown weight="bold" aria-hidden="true" /></button></dd></div>
+              <div><dt>Expenses</dt><dd><button type="button" className="dd-open" onClick={() => setBreakdown({ year: year.year, type: 'expense' })}>{formatCurrency(year.expenses)}<CaretDown weight="bold" aria-hidden="true" /></button></dd></div>
+              <div><dt>Invested</dt><dd><button type="button" className="dd-open" onClick={() => setBreakdown({ year: year.year, type: 'investment' })}>{formatCurrency(year.investments)}<CaretDown weight="bold" aria-hidden="true" /></button>{year.income > 0 && <span className="dd-ratio">({Math.round((year.investments / year.income) * 100)}%)</span>}</dd></div>
+              <div><dt>Savings rate</dt><dd>{Math.round(year.savingsRate)}%</dd></div>
+            </dl>
             <div className="year-months"><span><strong>{year.monthsTracked}</strong> of 12 asset months</span><span>{Math.min(100, Math.round((year.monthsTracked / 12) * 100))}%</span></div><div className="year-progress-track"><span style={{ width: `${Math.min(100, (year.monthsTracked / 12) * 100)}%` }} /></div>
           </article>)}</div>
         </section>
@@ -2615,7 +2787,50 @@ function Dashboard({ session }: { session: Session }) {
           {selectedCategoryEntries && selectedCategorySummary && <div className="entry-dialog-card category-entries-card">
             <header className="entry-dialog-heading"><div><p className="eyebrow">{categoryMeta[selectedCategoryEntries.type].label} · {formatMonth(selectedCategoryEntries.period)}</p><h2 id="category-entries-title">{selectedCategorySummary.icon && <span className="heading-emoji" aria-hidden="true">{selectedCategorySummary.icon}</span>}{selectedCategorySummary.name}</h2><p>{categoryLedgerEntries.length} {categoryLedgerEntries.length === 1 ? 'entry' : 'entries'} · {formatCurrency(selectedCategorySummary.amount)} category total</p></div><button type="button" onClick={() => setSelectedCategoryEntries(null)} aria-label="Close category entries"><X aria-hidden="true" /></button></header>
             <div className={`entry-type-badge ${selectedCategoryEntries.type}`}><SelectedCategoryIcon weight="duotone" aria-hidden="true" /><span>Amount and remark details</span></div>
+            {Math.abs(categoryTotalGap) > 0.005 && <div className="total-gap" role="status">
+              <strong>The total is {formatCurrency(Math.abs(categoryTotalGap))} {categoryTotalGap > 0 ? 'more' : 'less'} than these entries add up to.</strong>
+              <p>Entries come to {formatCurrency(ledgerEntriesTotal)}; the month is recorded as {formatCurrency(Number(selectedCategorySummary?.amount ?? 0))}. If everything here is itemised, correct it. If part of the month was entered as a single figure rather than itemised, this gap is meant to be there — leave it alone.</p>
+              <button type="button" onClick={() => void repairCategoryTotal()}>Set the total to {formatCurrency(ledgerEntriesTotal)}</button>
+            </div>}
             {categoryLedgerEntries.length === 0 ? <div className="category-entry-empty"><Receipt aria-hidden="true" /><strong>No itemised entries for this month</strong><p>The category total exists, but no amount-and-remark breakdown is available.</p></div> : <div className="category-entry-list">{categoryLedgerEntries.map((entry) => <EditableLedgerEntryRow key={entry.id} entry={entry} type={selectedCategoryEntries.type} saving={entryEditSavingId === entry.id} onSave={handleUpdateLedgerEntry} onDelete={handleDeleteLedgerEntry} />)}</div>}
+          </div>}
+        </dialog>
+
+        <dialog className="entry-dialog breakdown-dialog" ref={breakdownDialogRef} aria-labelledby="breakdown-title" onClose={() => setBreakdown(null)} onCancel={() => setBreakdown(null)} onClick={(event) => { if (event.target === event.currentTarget) setBreakdown(null) }}>
+          {breakdown && <div className="entry-dialog-card breakdown-card">
+            <header className="entry-dialog-heading"><div><p className="eyebrow">{categoryMeta[breakdown.type].label} · {breakdown.year}</p><h2 id="breakdown-title">{formatCurrency(breakdownTotal)}</h2><p>{breakdownSlices.length} {breakdownSlices.length === 1 ? 'category' : 'categories'} across the year</p></div><button type="button" onClick={() => setBreakdown(null)} aria-label="Close the breakdown"><X aria-hidden="true" /></button></header>
+
+            {breakdownSlices.length === 0 ? <div className="category-entry-empty"><Receipt aria-hidden="true" /><strong>Nothing recorded in {breakdown.year}</strong><p>No {categoryMeta[breakdown.type].label.toLowerCase()} were recorded for this year.</p></div> : <>
+              <CategoryDonut slices={breakdownSlices} selectedId={breakdownSliceId} onSelect={setBreakdownSliceId} />
+
+              {/* the legend is the control: the ring is small, and a name is easier to hit than a wedge */}
+              <div className="breakdown-legend">{breakdownSlices.map((slice, index) => {
+                const share = breakdownWeighed > 0 ? Math.abs(slice.total) / breakdownWeighed : 0
+                return <button
+                  key={slice.id}
+                  type="button"
+                  className={`breakdown-legend-row ${breakdownSliceId === slice.id ? 'chosen' : ''}`}
+                  aria-pressed={breakdownSliceId === slice.id}
+                  onClick={() => setBreakdownSliceId(breakdownSliceId === slice.id ? null : slice.id)}
+                >
+                  <i aria-hidden="true" style={{ background: chartColors[index % chartColors.length] }} />
+                  <span>{slice.icon && <span className="heading-emoji" aria-hidden="true">{slice.icon}</span>}{slice.name}</span>
+                  <b className={slice.total < 0 ? 'negative' : ''}>{formatCurrency(slice.total)}</b>
+                  <em>{(share * 100).toFixed(1)}%</em>
+                </button>
+              })}</div>
+
+              {breakdownChosen && <section className="breakdown-months" aria-label={`${breakdownChosen.name} month by month`}>
+                <h3>{breakdownChosen.name} · month by month</h3>
+                <div className="breakdown-month-list">{[...breakdownChosen.months.entries()]
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([period, value]) => <div className="breakdown-month-row" key={period}>
+                    <strong>{formatShortMonth(period)}</strong>
+                    <span className={value < 0 ? 'negative' : ''}>{formatCurrency(value)}</span>
+                  </div>)}</div>
+                <div className="breakdown-month-total"><strong>Year total</strong><span className={breakdownChosen.total < 0 ? 'negative' : ''}>{formatCurrency(breakdownChosen.total)}</span></div>
+              </section>}
+            </>}
           </div>}
         </dialog>
       </main>

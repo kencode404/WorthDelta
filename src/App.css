@@ -250,6 +250,41 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .year-card dt { color: var(--muted); font-size: 10px; }
 .year-card dd { margin: 5px 0 0; color: var(--ink); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .year-card dd .dd-ratio { margin-left: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+
+/* The three figures that open a breakdown. Styled as the plain text they
+   replaced, with a caret to say there is something behind them. */
+.dd-open { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-variant-numeric: tabular-nums; }
+.dd-open svg { width: 10px; height: 10px; color: var(--muted); }
+.dd-open:hover { color: var(--brand-dark); }
+.dd-open:hover svg { color: var(--brand-dark); }
+
+.breakdown-card { display: grid; gap: 14px; }
+.breakdown-donut { display: block; width: min(188px, 62vw); height: auto; margin: 0 auto; }
+.breakdown-arc { cursor: pointer; transition: opacity .15s ease; }
+.breakdown-arc.dimmed { opacity: .28; }
+.breakdown-donut-value { fill: var(--navy); font-size: 24px; font-weight: 800; }
+.breakdown-donut-label { fill: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.breakdown-empty { margin: 0; color: var(--muted); font-size: 12px; text-align: center; }
+
+.breakdown-legend { display: grid; gap: 5px; max-height: 34vh; overflow-y: auto; }
+.breakdown-legend-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 46px; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); font: inherit; font-size: 12px; text-align: left; }
+.breakdown-legend-row i { width: 10px; height: 10px; border-radius: 50%; }
+.breakdown-legend-row span { min-width: 0; overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.breakdown-legend-row b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.breakdown-legend-row b.negative { color: #b3312a; }
+.breakdown-legend-row em { color: var(--muted); font-size: 11px; font-style: normal; font-weight: 700; text-align: right; }
+.breakdown-legend-row.chosen { border-color: var(--brand); background: #f1f8f1; box-shadow: 0 2px 0 rgba(34, 139, 34, .18); }
+
+.breakdown-months { padding-top: 12px; border-top: 1px solid var(--line); }
+.breakdown-months h3 { margin: 0 0 9px; color: var(--navy); font-size: 13px; }
+.breakdown-month-list { display: grid; gap: 3px; max-height: 32vh; overflow-y: auto; }
+.breakdown-month-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; border-radius: 10px; background: var(--surface); font-size: 12px; }
+.breakdown-month-row strong { color: var(--muted); font-size: 11px; font-weight: 700; }
+.breakdown-month-row span { font-weight: 800; font-variant-numeric: tabular-nums; }
+.breakdown-month-row span.negative, .breakdown-month-total span.negative { color: #b3312a; }
+.breakdown-month-total { display: flex; align-items: center; justify-content: space-between; margin-top: 9px; padding: 9px 10px; border-radius: 10px; background: #f1f8f1; font-size: 12px; }
+.breakdown-month-total strong { color: var(--brand-dark); font-size: 11px; }
+.breakdown-month-total span { font-weight: 800; font-variant-numeric: tabular-nums; }
 .year-months { display: flex; justify-content: space-between; gap: 12px; margin-top: 15px; color: var(--muted); font-size: 10px; }
 .year-months strong { color: var(--ink); }
 .year-progress-track { height: 9px; margin-top: 7px; overflow: hidden; border: 1px solid #cbd4e4; border-radius: 999px; background: #e9edf5; }
@@ -1053,3 +1088,11 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
   width: 1.1rem;
   height: 1.1rem;
 }
+
+/* Says when a month's total and its entries disagree. Not an error: a total can
+   legitimately hold more than what was itemised, so it reports and offers. */
+.total-gap { display: grid; gap: 7px; padding: 12px 13px; border: 2px solid #e2b552; border-radius: 14px; background: #fdf6e6; }
+.total-gap strong { color: #7a5a12; font-size: 12px; }
+.total-gap p { margin: 0; color: #8a6a22; font-size: 11px; line-height: 1.5; }
+.total-gap button { justify-self: start; padding: 7px 12px; border: 0; border-radius: 10px; background: #b3861d; color: #fff; font-size: 11px; font-weight: 800; }
+.total-gap button:hover { background: #9a731a; }
