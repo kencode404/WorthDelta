@@ -106,12 +106,16 @@ export function ReturnsView({ userId, categories, records, entries, loading }: R
   // whether the account has ever had a scope written, which decides if an empty
   // one here is a choice or just a device that has not been told yet
   const [scopeOnAccount, setScopeOnAccount] = useState(false)
+  // A scope that fails to reach the account still works here, so the failure is
+  // invisible until another device shows the wrong figures. It gets said.
+  const [scopeError, setScopeError] = useState('')
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
       const { data, error } = await supabase.from('worthdelta_profiles').select('returns_scope').maybeSingle()
       if (cancelled) return
+      if (error) setScopeError(`Could not read the account's scope — this device's own is being used. ${error.message}`)
       const remote = error ? null : normaliseScope(data?.returns_scope)
       // An empty scope that was deliberately saved still counts; only a column
       // never written falls back to whatever this device had.
@@ -142,7 +146,9 @@ export function ReturnsView({ userId, categories, records, entries, loading }: R
     if (empty && !scopeOnAccount) return
 
     setScopeOnAccount(true)
-    void supabase.from('worthdelta_profiles').update({ returns_scope: scope }).eq('id', userId)
+    void supabase.from('worthdelta_profiles').update({ returns_scope: scope }).eq('id', userId).then(({ error }) => {
+      setScopeError(error ? `Kept on this device only — the account copy could not be saved. ${error.message}` : '')
+    })
   }, [scopeLoaded, scopeOnAccount, selectedAssetIds, selectedDividendIds, selectedInvestmentIds, userId])
 
   const selectedInvestments = useMemo(() => investmentCategories.filter((category) => selectedInvestmentIds.includes(category.id)), [investmentCategories, selectedInvestmentIds])
@@ -204,7 +210,7 @@ export function ReturnsView({ userId, categories, records, entries, loading }: R
     <details className="panel returns-selector">
       <summary><span><CaretDown weight="bold" aria-hidden="true" /><strong>Included Investments</strong></span><small>{selectedInvestments.length} investment · {selectedAssets.length} asset · {selectedDividends.length} dividend</small></summary>
       <div className="returns-selector-body">
-        <div className="returns-section-heading"><div><p className="eyebrow">Portfolio scope</p><h2>Build your XIRR scope</h2><p>Choose investment cash flows, the Initial Asset opening and latest values, and optional dividend income. Your choices are saved to your account and follow you to every device.</p></div>{(selectedInvestments.length > 0 || selectedAssets.length > 0 || selectedDividends.length > 0) && <button className="returns-clear" type="button" onClick={() => { setSelectedInvestmentIds([]); setSelectedAssetIds([]); setSelectedDividendIds([]) }}>Clear selection</button>}</div>
+        <div className="returns-section-heading"><div><p className="eyebrow">Portfolio scope</p><h2>Build your XIRR scope</h2><p>Choose investment cash flows, the Initial Asset opening and latest values, and optional dividend income. Your choices are saved to your account and follow you to every device.</p></div>{scopeError && <p className="returns-scope-error" role="alert">{scopeError}</p>}{(selectedInvestments.length > 0 || selectedAssets.length > 0 || selectedDividends.length > 0) && <button className="returns-clear" type="button" onClick={() => { setSelectedInvestmentIds([]); setSelectedAssetIds([]); setSelectedDividendIds([]) }}>Clear selection</button>}</div>
         {loading ? <p className="returns-empty">Loading categories…</p> : <div className="returns-scope-grid">
           <section className="returns-scope-section flow" aria-labelledby="xirr-flow-categories-title"><header><span className="returns-scope-icon"><ChartLineUp weight="duotone" aria-hidden="true" /></span><div><h3 id="xirr-flow-categories-title">Cash Flow Data</h3><p>Choose from Investment categories.</p></div></header>{investmentCategories.length === 0 ? <p className="returns-empty">No Investment categories yet.</p> : <div className="returns-choice-grid">{investmentCategories.map((category) => <ScopeChoice key={category.id} category={category} kind="flow" checked={selectedInvestmentIds.includes(category.id)} onToggle={() => toggleSelection(category.id, setSelectedInvestmentIds)} />)}</div>}</section>
           <section className="returns-scope-section value" aria-labelledby="xirr-value-categories-title"><header><span className="returns-scope-icon"><Wallet weight="duotone" aria-hidden="true" /></span><div><h3 id="xirr-value-categories-title">Current Latest Value</h3><p>Choose from Initial Assets categories.</p></div></header>{assetCategories.length === 0 ? <p className="returns-empty">No Initial Asset categories yet.</p> : <div className="returns-choice-grid">{assetCategories.map((category) => <ScopeChoice key={category.id} category={category} kind="value" checked={selectedAssetIds.includes(category.id)} onToggle={() => toggleSelection(category.id, setSelectedAssetIds)} />)}</div>}</section>

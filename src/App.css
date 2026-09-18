@@ -1096,3 +1096,7 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .total-gap p { margin: 0; color: #8a6a22; font-size: 11px; line-height: 1.5; }
 .total-gap button { justify-self: start; padding: 7px 12px; border: 0; border-radius: 10px; background: #b3861d; color: #fff; font-size: 11px; font-weight: 800; }
 .total-gap button:hover { background: #9a731a; }
+
+/* When the scope cannot reach the account. It still works on this device, so
+   without saying so the only symptom is another device disagreeing. */
+.returns-scope-error { margin: 8px 0 0; padding: 9px 11px; border: 2px solid #d5453b; border-radius: 11px; background: #fdeceb; color: #8f2822; font-size: 11px; line-height: 1.5; }
