@@ -1406,7 +1406,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const APP_VERSION = '1.22'
+const APP_VERSION = '1.23'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
@@ -2637,6 +2637,13 @@ function Dashboard({ session }: { session: Session }) {
         <a className="brand brand-light" href="#overview" aria-label="WorthDelta overview" onClick={() => setMobileNavOpen(false)}><span className="brand-mark app-icon-mark" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}worthdelta-icon.png`} alt="" /></span><span>WorthDelta</span></a>
         <nav aria-label="Dashboard"><a ref={firstNavItemRef} className={`nav-item ${view === 'overview' ? 'active' : ''}`} href="#overview" onClick={() => setMobileNavOpen(false)}><ChartLineUp weight="duotone" aria-hidden="true" />Overview</a><a className={`nav-item ${view === 'records' ? 'active' : ''}`} href="#records" onClick={() => setMobileNavOpen(false)}><Receipt weight="duotone" aria-hidden="true" />Records</a><a className={`nav-item ${view === 'returns' ? 'active' : ''}`} href="#returns" onClick={() => setMobileNavOpen(false)}><Percent weight="duotone" aria-hidden="true" />Returns</a><a className={`nav-item ${view === 'fire' ? 'active' : ''}`} href="#fire" onClick={() => setMobileNavOpen(false)}><Campfire weight="duotone" aria-hidden="true" />F.I.R.E Plan</a><a className={`nav-item ${view === 'settings' ? 'active' : ''}`} href="#settings" onClick={() => setMobileNavOpen(false)}><GearSix weight="duotone" aria-hidden="true" />Settings</a></nav>
         <div className="sidebar-user"><span className="avatar">{(session.user.email?.[0] ?? 'W').toUpperCase()}</span><span><strong>{session.user.user_metadata.full_name ?? 'WorthDelta user'}</strong><small>{session.user.email}</small></span><button type="button" onClick={() => void supabase.auth.signOut()} aria-label="Sign out"><SignOut aria-hidden="true" /></button></div>
+        {/*
+          The same build number the lock screen carries. It was only readable
+          before signing in, which is the one moment nobody is looking at it —
+          every question about which build a phone is running comes up while
+          the app is open.
+        */}
+        <p className="sidebar-version">v{APP_VERSION}</p>
       </aside>
 
       <main className="dashboard-main">
