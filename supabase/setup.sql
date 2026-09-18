@@ -98,6 +98,11 @@ alter table public.worthdelta_financial_categories
 alter table public.worthdelta_profiles
   add column if not exists lock_pin text;
 
+-- which categories the Returns tab counts, for the same reason: a scope held in
+-- one browser had every device reporting a different XIRR for one portfolio
+alter table public.worthdelta_profiles
+  add column if not exists returns_scope jsonb;
+
 -- ----------------------------------------------------------- constraints
 
 do $$

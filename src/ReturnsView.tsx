@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CaretDown, ChartLineUp, CheckCircle, Wallet } from '@phosphor-icons/react'
 import { calculateXirr, combineCashFlowsByDate } from './lib/xirr'
+import { supabase } from './lib/supabase'
 import type { FinancialCategory, LedgerEntry, MonthlyRecord } from './types'
 
 interface ReturnsViewProps { userId: string; categories: FinancialCategory[]; records: MonthlyRecord[]; entries: LedgerEntry[]; loading: boolean }
@@ -29,6 +30,20 @@ const readScope = (userId: string): SavedScope => {
       dividendCategoryIds: Array.isArray(parsed.dividendCategoryIds) ? parsed.dividendCategoryIds.filter((value: unknown): value is string => typeof value === 'string') : [],
     }
   } catch { return { investmentCategoryIds: [], assetCategoryIds: [], dividendCategoryIds: [] } }
+}
+
+/** The account's copy, from the profile row. Null when it has never been saved. */
+const normaliseScope = (value: unknown): SavedScope | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const raw = value as Record<string, unknown>
+  const list = (key: string) => Array.isArray(raw[key])
+    ? (raw[key] as unknown[]).filter((item): item is string => typeof item === 'string')
+    : []
+  return {
+    investmentCategoryIds: list('investmentCategoryIds'),
+    assetCategoryIds: list('assetCategoryIds'),
+    dividendCategoryIds: list('dividendCategoryIds'),
+  }
 }
 
 const readLegacySelection = (userId: string) => {
@@ -84,7 +99,37 @@ export function ReturnsView({ userId, categories, records, entries, loading }: R
     setSelectedAssetIds(assetCategories.filter((category) => legacyNames.has(categoryKey(category.name))).map((category) => category.id))
   }, [assetCategories, categories.length, investmentCategories, selectedAssetIds.length, selectedInvestmentIds.length, userId])
 
-  useEffect(() => { window.localStorage.setItem(scopeStorageKey(userId), JSON.stringify({ investmentCategoryIds: selectedInvestmentIds, assetCategoryIds: selectedAssetIds, dividendCategoryIds: selectedDividendIds })) }, [selectedAssetIds, selectedDividendIds, selectedInvestmentIds, userId])
+  // Nothing is written back until the account's own copy has been asked for.
+  // Saving before it arrives would push this device's scope — empty, on a
+  // device seeing the tab for the first time — over the one already stored.
+  const [scopeLoaded, setScopeLoaded] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const { data, error } = await supabase.from('worthdelta_profiles').select('returns_scope').maybeSingle()
+      if (cancelled) return
+      const remote = error ? null : normaliseScope(data?.returns_scope)
+      // An empty scope that was deliberately saved still counts; only a column
+      // never written falls back to whatever this device had.
+      if (remote) {
+        setSelectedInvestmentIds(remote.investmentCategoryIds)
+        setSelectedAssetIds(remote.assetCategoryIds)
+        setSelectedDividendIds(remote.dividendCategoryIds)
+      }
+      setScopeLoaded(true)
+    })()
+    return () => { cancelled = true }
+  }, [userId])
+
+  useEffect(() => {
+    if (!scopeLoaded) return
+    const scope: SavedScope = { investmentCategoryIds: selectedInvestmentIds, assetCategoryIds: selectedAssetIds, dividendCategoryIds: selectedDividendIds }
+    // Locally first, so the tab still opens on the right scope with no network
+    // and offline; the profile is what carries it to the next device.
+    window.localStorage.setItem(scopeStorageKey(userId), JSON.stringify(scope))
+    void supabase.from('worthdelta_profiles').update({ returns_scope: scope }).eq('id', userId)
+  }, [scopeLoaded, selectedAssetIds, selectedDividendIds, selectedInvestmentIds, userId])
 
   const selectedInvestments = useMemo(() => investmentCategories.filter((category) => selectedInvestmentIds.includes(category.id)), [investmentCategories, selectedInvestmentIds])
   const selectedAssets = useMemo(() => assetCategories.filter((category) => selectedAssetIds.includes(category.id)), [assetCategories, selectedAssetIds])
@@ -145,7 +190,7 @@ export function ReturnsView({ userId, categories, records, entries, loading }: R
     <details className="panel returns-selector">
       <summary><span><CaretDown weight="bold" aria-hidden="true" /><strong>Included Investments</strong></span><small>{selectedInvestments.length} investment · {selectedAssets.length} asset · {selectedDividends.length} dividend</small></summary>
       <div className="returns-selector-body">
-        <div className="returns-section-heading"><div><p className="eyebrow">Portfolio scope</p><h2>Build your XIRR scope</h2><p>Choose investment cash flows, the Initial Asset opening and latest values, and optional dividend income. All choices stay on this device.</p></div>{(selectedInvestments.length > 0 || selectedAssets.length > 0 || selectedDividends.length > 0) && <button className="returns-clear" type="button" onClick={() => { setSelectedInvestmentIds([]); setSelectedAssetIds([]); setSelectedDividendIds([]) }}>Clear selection</button>}</div>
+        <div className="returns-section-heading"><div><p className="eyebrow">Portfolio scope</p><h2>Build your XIRR scope</h2><p>Choose investment cash flows, the Initial Asset opening and latest values, and optional dividend income. Your choices are saved to your account and follow you to every device.</p></div>{(selectedInvestments.length > 0 || selectedAssets.length > 0 || selectedDividends.length > 0) && <button className="returns-clear" type="button" onClick={() => { setSelectedInvestmentIds([]); setSelectedAssetIds([]); setSelectedDividendIds([]) }}>Clear selection</button>}</div>
         {loading ? <p className="returns-empty">Loading categories…</p> : <div className="returns-scope-grid">
           <section className="returns-scope-section flow" aria-labelledby="xirr-flow-categories-title"><header><span className="returns-scope-icon"><ChartLineUp weight="duotone" aria-hidden="true" /></span><div><h3 id="xirr-flow-categories-title">Cash Flow Data</h3><p>Choose from Investment categories.</p></div></header>{investmentCategories.length === 0 ? <p className="returns-empty">No Investment categories yet.</p> : <div className="returns-choice-grid">{investmentCategories.map((category) => <ScopeChoice key={category.id} category={category} kind="flow" checked={selectedInvestmentIds.includes(category.id)} onToggle={() => toggleSelection(category.id, setSelectedInvestmentIds)} />)}</div>}</section>
           <section className="returns-scope-section value" aria-labelledby="xirr-value-categories-title"><header><span className="returns-scope-icon"><Wallet weight="duotone" aria-hidden="true" /></span><div><h3 id="xirr-value-categories-title">Current Latest Value</h3><p>Choose from Initial Assets categories.</p></div></header>{assetCategories.length === 0 ? <p className="returns-empty">No Initial Asset categories yet.</p> : <div className="returns-choice-grid">{assetCategories.map((category) => <ScopeChoice key={category.id} category={category} kind="value" checked={selectedAssetIds.includes(category.id)} onToggle={() => toggleSelection(category.id, setSelectedAssetIds)} />)}</div>}</section>
