@@ -103,6 +103,9 @@ export function ReturnsView({ userId, categories, records, entries, loading }: R
   // Saving before it arrives would push this device's scope — empty, on a
   // device seeing the tab for the first time — over the one already stored.
   const [scopeLoaded, setScopeLoaded] = useState(false)
+  // whether the account has ever had a scope written, which decides if an empty
+  // one here is a choice or just a device that has not been told yet
+  const [scopeOnAccount, setScopeOnAccount] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -116,6 +119,7 @@ export function ReturnsView({ userId, categories, records, entries, loading }: R
         setSelectedInvestmentIds(remote.investmentCategoryIds)
         setSelectedAssetIds(remote.assetCategoryIds)
         setSelectedDividendIds(remote.dividendCategoryIds)
+        setScopeOnAccount(true)
       }
       setScopeLoaded(true)
     })()
@@ -128,8 +132,18 @@ export function ReturnsView({ userId, categories, records, entries, loading }: R
     // Locally first, so the tab still opens on the right scope with no network
     // and offline; the profile is what carries it to the next device.
     window.localStorage.setItem(scopeStorageKey(userId), JSON.stringify(scope))
+
+    // An empty scope is only worth publishing once the account has one to
+    // replace. Without this, the first device to open the tab wins even when it
+    // has nothing: it finds no scope on the account, keeps its own empty
+    // selection, publishes that, and every other device adopts the blank.
+    // Clearing a scope on purpose still travels, because by then one exists.
+    const empty = scope.investmentCategoryIds.length === 0 && scope.assetCategoryIds.length === 0 && scope.dividendCategoryIds.length === 0
+    if (empty && !scopeOnAccount) return
+
+    setScopeOnAccount(true)
     void supabase.from('worthdelta_profiles').update({ returns_scope: scope }).eq('id', userId)
-  }, [scopeLoaded, selectedAssetIds, selectedDividendIds, selectedInvestmentIds, userId])
+  }, [scopeLoaded, scopeOnAccount, selectedAssetIds, selectedDividendIds, selectedInvestmentIds, userId])
 
   const selectedInvestments = useMemo(() => investmentCategories.filter((category) => selectedInvestmentIds.includes(category.id)), [investmentCategories, selectedInvestmentIds])
   const selectedAssets = useMemo(() => assetCategories.filter((category) => selectedAssetIds.includes(category.id)), [assetCategories, selectedAssetIds])
