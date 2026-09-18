@@ -49,8 +49,3 @@ export async function select(table, params = {}) {
   }
 }
 
-/** Adds the account filter when one is configured, so accounts cannot mix. */
-export const scoped = (params = {}) => {
-  const id = userId()
-  return id ? { ...params, user_id: `eq.${id}` } : params
-}

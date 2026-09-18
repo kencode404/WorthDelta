@@ -10,21 +10,33 @@
  * to cannot make it write.
  */
 
-import { select, scoped, userId } from './supabase.js'
-
 const money = (value) => Number(value ?? 0)
 const round = (value) => Math.round(value * 100) / 100
-const CATEGORY_JOIN = 'worthdelta_financial_categories(name,category_type)'
-
-const categoriesById = async () => {
-  const rows = await select('worthdelta_financial_categories', scoped({ select: 'id,name,category_type,archived_at,sort_order' }))
-  return new Map(rows.map((row) => [row.id, row]))
-}
 
 /** period is stored as the first of the month; accept a bare 'YYYY-MM' too. */
 const asPeriod = (value) => (value && value.length === 7 ? `${value}-01` : value)
 
-export const tools = [
+/**
+ * The tools, given a way to read.
+ *
+ * Nothing in here reaches for an environment. One server runs under node and
+ * reads from process.env, the other under Deno inside a Supabase function; both
+ * hand in a `select` and get back the same tools, so there is one copy of what
+ * the questions mean rather than two that drift apart.
+ */
+export const createTools = ({ select, userId }) => {
+  /** Adds the account filter when one is configured, so accounts cannot mix. */
+  const scoped = (params = {}) => {
+    const id = userId()
+    return id ? { ...params, user_id: `eq.${id}` } : params
+  }
+
+  const categoriesById = async () => {
+    const rows = await select('worthdelta_financial_categories', scoped({ select: 'id,name,category_type,archived_at,sort_order' }))
+    return new Map(rows.map((row) => [row.id, row]))
+  }
+
+  return [
   {
     name: 'list_categories',
     description: 'List the financial categories, optionally of one type. Useful for finding the exact name or id a later call needs.',
@@ -224,6 +236,5 @@ export const tools = [
       }))
     },
   },
-]
-
-export const byName = new Map(tools.map((tool) => [tool.name, tool]))
+  ]
+}
