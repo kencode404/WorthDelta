@@ -27,3 +27,6 @@ data/*.sql
 *.njsproj
 *.sln
 *.sw?
+
+# the MCP server has no dependencies; nothing should ever land here
+mcp/node_modules

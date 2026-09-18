@@ -1,0 +1,9 @@
+{
+  "name": "worthdelta-mcp",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Read-only MCP server over the WorthDelta Supabase data",
+  "bin": { "worthdelta-mcp": "src/index.js" },
+  "scripts": { "start": "node src/index.js" }
+}
