@@ -24,7 +24,7 @@ const asPeriod = (value) => (value && value.length === 7 ? `${value}-01` : value
  * hand in a `select` and get back the same tools, so there is one copy of what
  * the questions mean rather than two that drift apart.
  */
-export const createTools = ({ select, userId }) => {
+export const createTools = ({ select, write = null, userId }) => {
   /** Adds the account filter when one is configured, so accounts cannot mix. */
   const scoped = (params = {}) => {
     const id = userId()
@@ -236,5 +236,73 @@ export const createTools = ({ select, userId }) => {
       }))
     },
   },
+
+  // Only where a way to write was handed in. A server given none simply does
+  // not have this tool, so there is nothing to ask it for.
+  ...(write ? [{
+    name: 'add_entry',
+    description:
+      "Record one entry in a category, the way the app's add form does. Adds the itemised entry and moves that month's total by the same amount. Refuses rather than guesses: the category must already exist and the date must be given. Does not edit or delete — use the app for that.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', description: 'An existing category name, matched case-insensitively.' },
+        date: { type: 'string', description: "The date it happened, 'YYYY-MM-DD'. The month it counts toward comes from this." },
+        amount: { type: 'number', description: 'May be negative — a refund, a correction, money taken back out.' },
+        description: { type: 'string', description: 'The remark. Optional, up to 200 characters.' },
+      },
+      required: ['category', 'date', 'amount'],
+    },
+    async run({ category, date, amount, description = '' }) {
+      const owner = userId()
+      // Writing needs to know whose row this is, and there is nothing sensible
+      // to fall back on. Better to refuse than to file it under a guess.
+      if (!owner) throw new Error('Set WORTHDELTA_USER_ID before adding entries.')
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`Give the date as YYYY-MM-DD, not "${date}".`)
+      if (!Number.isFinite(amount)) throw new Error('The amount must be a number.')
+      if ((description ?? '').length > 200) throw new Error('A remark can be at most 200 characters.')
+
+      const categories = await categoriesById()
+      const matches = [...categories.values()].filter(
+        (row) => row.name.toLowerCase() === category.trim().toLowerCase() && !row.archived_at,
+      )
+      if (matches.length === 0) throw new Error(`No category named "${category}". Use list_categories to see them.`)
+      // Two categories of one name is a real state of this data, and picking
+      // one at random would file the money somewhere arbitrary.
+      if (matches.length > 1) throw new Error(`More than one category is named "${category}". Rename one before adding to it.`)
+      const chosen = matches[0]
+      const period = `${date.slice(0, 7)}-01`
+
+      const entry = await write.insert('worthdelta_ledger_entries', {
+        user_id: owner,
+        category_id: chosen.id,
+        entry_date: date,
+        period,
+        amount,
+        description: (description ?? '').trim(),
+        source_type: 'manual',
+      })
+
+      // The month's total is a row of its own. An entry added without moving it
+      // is exactly the drift find_drifted_totals exists to catch, so it moves
+      // here, the same way the app moves it.
+      const existing = (await select('worthdelta_monthly_records', {
+        select: 'id,amount',
+        user_id: `eq.${owner}`,
+        category_id: `eq.${chosen.id}`,
+        period: `eq.${period}`,
+      }))[0]
+
+      const total = existing
+        ? await write.update('worthdelta_monthly_records', { id: `eq.${existing.id}`, user_id: `eq.${owner}` }, { amount: round(money(existing.amount) + amount), source: 'ledger' })
+        : await write.insert('worthdelta_monthly_records', { user_id: owner, category_id: chosen.id, period, amount: round(amount), source: 'ledger' })
+
+      return {
+        added: { id: entry?.id, category: chosen.name, entry_date: date, amount: round(amount), description: (description ?? '').trim() },
+        month_total_now: round(money(total?.amount)),
+        note: 'Check it in the app. Editing and deleting are not available here.',
+      }
+    },
+  }] : []),
   ]
 }

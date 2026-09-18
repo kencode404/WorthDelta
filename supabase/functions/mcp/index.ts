@@ -25,36 +25,15 @@
 import { createTools } from '../_shared/tools.js'
 import { createDispatcher } from '../_shared/rpc.js'
 import { createHandler } from '../_shared/http.js'
-
-const PAGE = 1000
+import { createRest } from '../_shared/rest.js'
 
 const env = (key: string) => Deno.env.get(key) ?? ''
 
-/** A GET against PostgREST, paged to the end. The only call this server makes. */
-async function select(table: string, params: Record<string, string> = {}) {
-  const url = env('SUPABASE_URL').replace(/\/$/, '')
-  const key = env('SUPABASE_SERVICE_ROLE_KEY')
-  if (!url || !key) throw new Error('The function is missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.')
+const { select, write } = createRest(() => ({
+  url: env('SUPABASE_URL'),
+  key: env('SUPABASE_SERVICE_ROLE_KEY'),
+}))
 
-  const rows: unknown[] = []
-  for (let from = 0; ; from += PAGE) {
-    const query = new URLSearchParams(params)
-    const response = await fetch(`${url}/rest/v1/${table}?${query}`, {
-      method: 'GET',
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        Range: `${from}-${from + PAGE - 1}`,
-        Accept: 'application/json',
-      },
-    })
-    if (!response.ok) throw new Error(`${table}: ${response.status} ${await response.text()}`)
-    const page = await response.json()
-    rows.push(...page)
-    if (page.length < PAGE) return rows
-  }
-}
-
-const dispatch = createDispatcher(createTools({ select, userId: () => env('WORTHDELTA_USER_ID') || null }))
+const dispatch = createDispatcher(createTools({ select, write, userId: () => env('WORTHDELTA_USER_ID') || null }))
 
 Deno.serve(createHandler({ dispatch, token: () => env('MCP_BEARER_TOKEN') }))

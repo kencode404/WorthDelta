@@ -13,9 +13,9 @@
 
 import { createTools } from '../../supabase/functions/_shared/tools.js'
 import { createDispatcher } from '../../supabase/functions/_shared/rpc.js'
-import { select, userId } from './supabase.js'
+import { select, write, userId } from './supabase.js'
 
-const dispatch = createDispatcher(createTools({ select, userId }))
+const dispatch = createDispatcher(createTools({ select, write, userId }))
 
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`)
 
