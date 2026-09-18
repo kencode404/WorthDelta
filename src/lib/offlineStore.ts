@@ -1,5 +1,6 @@
 import { fetchMyrRate } from './exchangeRate'
 import { supabase } from './supabase'
+import { ledgerTotalRows } from './ledgerTotals'
 import type {
   CategoryType,
   ExpenseGroup,
@@ -515,8 +516,15 @@ export async function queueLedgerEntry(input: QueueEntryInput) {
   const entryMutation = createEntryMutation(snapshot, input)
   const recordMutation = createRecordMutation(snapshot, {
     ...input,
+    // Still worked out here, so the figure on screen moves at once. It is no
+    // longer the last word: syncPendingChanges adds the entries up afterwards
+    // and corrects whatever this device could not have known.
     amount: Number(existingMonthly?.amount ?? 0) + input.amount - Number(existingEntry?.amount ?? 0),
-    source: 'ledger',
+    // A total typed in keeps saying so. Calling it entry-built the moment an
+    // entry joined it meant the part that was typed could no longer be told
+    // apart from the part that was itemised — and adding the entries up would
+    // then quietly discard it.
+    source: existingMonthly && existingMonthly.source !== 'ledger' ? existingMonthly.source : 'ledger',
   })
   applyEntryMutation(snapshot, entryMutation)
   applyRecordMutation(snapshot, recordMutation)
@@ -576,6 +584,45 @@ export async function queueHistoryImport(payload: HistoryFile, userId: string) {
     records: payload.records.length,
     entries: payload.entries?.length ?? 0,
     pendingCount: await getPendingChangeCount(userId),
+  }
+}
+
+/**
+ * Makes a month's total the sum of its entries, once they are all on the server.
+ *
+ * The total used to be whatever a device worked out for it: the figure it last
+ * remembered, plus what was being added. Send that and it replaces the total on
+ * the server — so anything added in between, on another device or before this
+ * one caught up, was quietly dropped from the total while its entries remained.
+ * Adding while offline is the same story: by the time it syncs, the remembered
+ * figure is old.
+ *
+ * Adding up the entries afterwards has no such window. Whatever order they
+ * arrived in and however stale the device was, the total lands right.
+ *
+ * Only for totals that are the sum of their entries. A total typed in directly
+ * with entries itemised under part of it is a different thing, and adding up
+ * its entries would throw the rest of it away.
+ */
+async function reconcileLedgerTotals(userId: string, touched: Array<{ categoryId: string; period: string }>) {
+  if (touched.length === 0) return
+  const categoryIds = [...new Set(touched.map((pair) => pair.categoryId))]
+  const periods = [...new Set(touched.map((pair) => pair.period))]
+
+  const [{ data: records, error: recordError }, { data: entries, error: entryError }] = await Promise.all([
+    supabase.from('worthdelta_monthly_records').select('id,category_id,period,source').eq('user_id', userId).in('category_id', categoryIds).in('period', periods),
+    supabase.from('worthdelta_ledger_entries').select('category_id,period,amount').eq('user_id', userId).in('category_id', categoryIds).in('period', periods),
+  ])
+  if (recordError) throw recordError
+  if (entryError) throw entryError
+
+  const rows = ledgerTotalRows(userId, touched, records ?? [], entries ?? [])
+
+  for (let index = 0; index < rows.length; index += SYNC_CHUNK_SIZE) {
+    const { error } = await supabase
+      .from('worthdelta_monthly_records')
+      .upsert(rows.slice(index, index + SYNC_CHUNK_SIZE), { onConflict: 'user_id,category_id,period' })
+    if (error) throw error
   }
 }
 
@@ -691,6 +738,17 @@ export async function syncPendingChanges(userId: string) {
       .upsert(manualRows.slice(index, index + SYNC_CHUNK_SIZE), { onConflict: 'id' })
     if (error) throw error
   }
+  // Last, once every entry is up: the totals of the months they landed in are
+  // added up from the entries themselves, replacing whatever this device
+  // calculated for them before it knew what else had arrived.
+  await reconcileLedgerTotals(
+    userId,
+    [...new Map(entryMutations.map((mutation) => [
+      `${categoryIdFor(mutation)}|${mutation.period}`,
+      { categoryId: categoryIdFor(mutation), period: mutation.period },
+    ])).values()],
+  )
+
   await clearSyncedMutations(categoryMutations, recordMutations, entryMutations)
   return categoryMutations.length + recordMutations.length + entryMutations.length
 }
