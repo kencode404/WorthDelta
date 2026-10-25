@@ -381,10 +381,12 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid rgba(
 .category-breakdown-name { min-width: 0; }
 .category-breakdown-name strong { display: block; overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .category-progress { display: block; height: 5px; margin-top: 6px; overflow: hidden; border-radius: 999px; background: rgba(23, 46, 87, .1); }
-.category-progress i { display: block; height: 100%; min-width: 0; border-radius: inherit; }
+.category-progress i { display: block; width: 0; height: 100%; min-width: 0; border-radius: inherit; }
 .category-breakdown-value { min-width: 76px; text-align: right; }
 .category-breakdown-value strong, .category-breakdown-value small { display: block; font-variant-numeric: tabular-nums; }
 .category-breakdown-value strong { color: var(--ink); font-size: 12px; }
+.category-breakdown-value strong.negative,
+.expense-breakdown-group > header span.negative { color: #b3312a; }
 .category-breakdown-value small { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .expense-breakdown-group { padding: 7px 9px; border-left: 4px solid #2f6e9e; border-radius: 10px; background: rgba(47, 110, 158, .08); }
 .expense-breakdown-group:nth-child(2) { border-left-color: #d06b34; background: rgba(208, 107, 52, .09); }
