@@ -459,13 +459,22 @@ function RecordSectionCard({
 }) {
   const meta = categoryMeta[type]
   const Icon = meta.icon
-  const categoryRow = (category: CategoryBreakdown) => <button className="category-breakdown-row category-breakdown-button" type="button" key={category.id} onClick={() => onOpenCategory(type, category)} aria-label={`View and edit ${category.name} entries`}>
-    {category.icon
-      ? <span className="category-breakdown-emoji" aria-hidden="true">{category.icon}</span>
-      : <span className="category-color" style={{ background: category.color }} aria-hidden="true" />}
-    <span className="category-breakdown-name"><strong>{category.name}</strong><span className="category-progress" aria-hidden="true"><i style={{ width: `${category.percentage}%`, background: category.color }} /></span></span>
-    <span className="category-breakdown-value"><strong>{formatCurrency(category.amount)}</strong><small>{category.percentage.toFixed(category.percentage > 0 && category.percentage < 1 ? 1 : 0)}%</small></span>
-  </button>
+  // Bar width is a share of this section's positive amounts. A negative
+  // width is invalid in CSS and the fill then stretches across the track,
+  // so a negative category stays empty. Its percent label still shows the
+  // signed share. The donut keeps category.percentage (net-total share).
+  const positiveTotal = categories.reduce((sum, category) => sum + (category.amount > 0 ? category.amount : 0), 0)
+  const shareOfPositives = (amount: number) => positiveTotal > 0 ? (amount / positiveTotal) * 100 : 0
+  const categoryRow = (category: CategoryBreakdown) => {
+    const share = shareOfPositives(category.amount)
+    return <button className="category-breakdown-row category-breakdown-button" type="button" key={category.id} onClick={() => onOpenCategory(type, category)} aria-label={`View and edit ${category.name} entries`}>
+      {category.icon
+        ? <span className="category-breakdown-emoji" aria-hidden="true">{category.icon}</span>
+        : <span className="category-color" style={{ background: category.color }} aria-hidden="true" />}
+      <span className="category-breakdown-name"><strong>{category.name}</strong><span className="category-progress" aria-hidden="true"><i style={{ width: `${Math.max(0, share)}%`, background: category.color }} /></span></span>
+      <span className="category-breakdown-value"><strong className={category.amount < 0 ? 'negative' : ''}>{formatCurrency(category.amount)}</strong><small>{share.toFixed(share > 0 && share < 1 ? 1 : 0)}%</small></span>
+    </button>
+  }
   const groupedCategories = expenseGroups.length > 0
     ? [
         ...expenseGroups.map((group, index) => ({
@@ -506,10 +515,13 @@ function RecordSectionCard({
           {showLiquidity && <p className="liquidity-readout"><span>Liquidity</span><strong>{formatCurrency(total - nonCurrentTotal)}</strong></p>}
         </div>
         {categories.length === 0 ? <div className="category-empty"><p>No {meta.label.toLocaleLowerCase('en')} categories yet.</p><a href="#settings">Add categories in Settings</a></div> : groupedCategories.length > 0 ? <div className="category-breakdown-list expense-breakdown-list">
-          {groupedCategories.map((group) => <section className="expense-breakdown-group" key={group.id}>
-            <header><strong>{group.name}</strong><span>{formatCurrency(group.categories.reduce((sum, category) => sum + category.amount, 0))}</span></header>
-            {group.categories.map(categoryRow)}
-          </section>)}
+          {groupedCategories.map((group) => {
+            const groupAmount = group.categories.reduce((sum, category) => sum + category.amount, 0)
+            return <section className="expense-breakdown-group" key={group.id}>
+              <header><strong>{group.name}</strong><span className={groupAmount < 0 ? 'negative' : ''}>{formatCurrency(groupAmount)}</span></header>
+              {group.categories.map(categoryRow)}
+            </section>
+          })}
         </div> : <div className="category-breakdown-list">{categories.map(categoryRow)}</div>}
       </div>
     </article>
@@ -1406,7 +1418,7 @@ function SecurityPanel({ userId, label }: { userId: string; label: string }) {
  * the lock behaves differently from the code this is what says which of the two
  * is actually running. Bump it with any change to how the lock opens.
  */
-const APP_VERSION = '1.23'
+const APP_VERSION = '1.24'
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPinValue] = useState('')
